@@ -41,9 +41,13 @@ import com.mongodb.MongoClientOptions;
 import com.mongodb.MongoCredential;
 import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoDatabase;
+
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import org.bson.Document;
 import org.polypheny.db.schema.Table;
 import org.polypheny.db.schema.impl.AbstractSchema;
 
@@ -59,18 +63,19 @@ public class MongoSchema extends AbstractSchema {
     /**
      * Creates a MongoDB schema.
      *
-     * @param host Mongo host, e.g. "localhost"
+     * @param host            Mongo host, e.g. "localhost"
      * @param credentialsList Optional credentials (empty list for none)
-     * @param options Mongo connection options
-     * @param database Mongo database name, e.g. "foodmart"
+     * @param options         Mongo connection options
+     * @param database        Mongo database name, e.g. "foodmart"
      */
-    MongoSchema( String host, String database, List<MongoCredential> credentialsList, MongoClientOptions options ) {
+    //public MongoSchema( String host, String database, List<MongoCredential> credentialsList, MongoClientOptions options ) { // TODO DL: evaluate what options are needed in the end
+    public MongoSchema(final String host, final int port, String database) {
         super();
         try {
-            final MongoClient mongo = new MongoClient( new ServerAddress( host ), credentialsList, options );
-            this.mongoDb = mongo.getDatabase( database );
-        } catch ( Exception e ) {
-            throw new RuntimeException( e );
+            final MongoClient mongo = new MongoClient(host, port);
+            this.mongoDb = mongo.getDatabase(database);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -81,17 +86,17 @@ public class MongoSchema extends AbstractSchema {
      * @param mongoDb existing mongo database instance
      */
     @VisibleForTesting
-    MongoSchema( MongoDatabase mongoDb ) {
+    MongoSchema(MongoDatabase mongoDb) {
         super();
-        this.mongoDb = Objects.requireNonNull( mongoDb, "mongoDb" );
+        this.mongoDb = Objects.requireNonNull(mongoDb, "mongoDb");
     }
 
 
     @Override
     protected Map<String, Table> getTableMap() {
         final ImmutableMap.Builder<String, Table> builder = ImmutableMap.builder();
-        for ( String collectionName : mongoDb.listCollectionNames() ) {
-            builder.put( collectionName, new MongoTable( collectionName ) );
+        for (String collectionName : mongoDb.listCollectionNames()) {
+            builder.put(collectionName, new MongoTable(collectionName));
         }
         return builder.build();
     }
