@@ -16,6 +16,7 @@ import com.google.common.collect.ImmutableList;
 import com.mongodb.MongoClientOptions;
 import lombok.extern.slf4j.Slf4j;
 import org.polypheny.db.adapter.DataStore;
+import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.entity.CatalogColumn;
 import org.polypheny.db.catalog.entity.CatalogColumnPlacement;
 import org.polypheny.db.catalog.entity.CatalogIndex;
@@ -49,6 +50,7 @@ public class MongoDBStore extends DataStore {
 
     private DockerClient client;
     private MongoSchema currentSchema;
+    private String databaseName = "test_db";
 
     public MongoDBStore(int adapterId, String uniqueName, Map<String, String> settings) {
         super(adapterId, uniqueName, settings, Boolean.parseBoolean(settings.get("persistent")));
@@ -111,7 +113,7 @@ public class MongoDBStore extends DataStore {
 
     @Override
     public void createNewSchema(SchemaPlus rootSchema, String name) {
-        this.currentSchema = new MongoSchema("localhost", Integer.parseInt(settings.get("port")), "test_db");
+        this.currentSchema = new MongoSchema("localhost", Integer.parseInt(settings.get("port")), databaseName);
     }
 
     @Override
@@ -161,13 +163,29 @@ public class MongoDBStore extends DataStore {
     }
 
     @Override
-    public void createTable(Context context, CatalogTable combinedTable) {
-        this.currentSchema.mongoDb.createCollection(combinedTable.name);
+    public void createTable(Context context, CatalogTable catalogTable) {
+        Catalog catalog = Catalog.getInstance();
+        this.currentSchema.mongoDb.createCollection(catalogTable.name);
+
+        catalogTable.columnIds.forEach(id -> {
+            String name = catalog.getColumn(id).name;
+            this.currentSchema.mongoDb.createCollection(name);
+        });
+
+        for ( CatalogColumnPlacement placement : catalog.getColumnPlacementsOnAdapter( getAdapterId(), catalogTable.id ) ) {
+            catalog.updateColumnPlacementPhysicalNames(
+                    getAdapterId(),
+                    placement.columnId,
+                    databaseName,
+                    catalogTable.name,
+                    placement.physicalColumnName,
+                    true );
+        }
     }
 
     @Override
     public void dropTable(Context context, CatalogTable combinedTable) {
-
+        this.currentSchema.mongoDb.getCollection(combinedTable.name).drop();
     }
 
     @Override
@@ -177,7 +195,7 @@ public class MongoDBStore extends DataStore {
 
     @Override
     public void dropColumn(Context context, CatalogColumnPlacement columnPlacement) {
-
+        this.currentSchema.mongoDb.getCollection(columnPlacement.physicalColumnName).drop();
     }
 
     @Override
