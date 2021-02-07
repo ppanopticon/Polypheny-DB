@@ -15,6 +15,7 @@ import com.github.dockerjava.transport.DockerHttpClient;
 import com.google.common.collect.ImmutableList;
 import com.mongodb.MongoClientOptions;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.polypheny.db.adapter.DataStore;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.entity.CatalogColumn;
@@ -113,7 +114,8 @@ public class MongoDBStore extends DataStore {
 
     @Override
     public void createNewSchema(SchemaPlus rootSchema, String name) {
-        this.currentSchema = new MongoSchema("localhost", Integer.parseInt(settings.get("port")), databaseName);
+        this.currentSchema = new MongoSchema("localhost", Integer.parseInt(settings.get("port")), name);
+        this.currentSchema.mongoDb.getCollection("testing_new").insertOne(new Document("test", "test"));
     }
 
     @Override
@@ -172,14 +174,14 @@ public class MongoDBStore extends DataStore {
             this.currentSchema.mongoDb.createCollection(name);
         });
 
-        for ( CatalogColumnPlacement placement : catalog.getColumnPlacementsOnAdapter( getAdapterId(), catalogTable.id ) ) {
+        for (CatalogColumnPlacement placement : catalog.getColumnPlacementsOnAdapter(getAdapterId(), catalogTable.id)) {
             catalog.updateColumnPlacementPhysicalNames(
                     getAdapterId(),
                     placement.columnId,
                     databaseName,
                     catalogTable.name,
                     placement.physicalColumnName,
-                    true );
+                    true);
         }
     }
 

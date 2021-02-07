@@ -997,7 +997,8 @@ public abstract class Catalog {
 
 
     public enum SchemaType {
-        RELATIONAL( 1 );
+        RELATIONAL( 1 ),
+        DOCUMENT(2);
         // GRAPH, DOCUMENT, ...
 
         private final int id;
