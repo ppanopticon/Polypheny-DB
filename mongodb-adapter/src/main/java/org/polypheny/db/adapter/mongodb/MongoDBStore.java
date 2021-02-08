@@ -1,3 +1,19 @@
+/*
+ * Copyright 2019-2021 The Polypheny Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.polypheny.db.adapter.mongodb;
 
 import com.github.dockerjava.api.DockerClient;
@@ -5,7 +21,6 @@ import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.exception.ConflictException;
 import com.github.dockerjava.api.model.ExposedPort;
-import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientConfig;
@@ -13,7 +28,8 @@ import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import com.google.common.collect.ImmutableList;
-import com.mongodb.MongoClientOptions;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.polypheny.db.adapter.DataStore;
@@ -29,11 +45,6 @@ import org.polypheny.db.schema.Table;
 import org.polypheny.db.transaction.PolyXid;
 import org.polypheny.db.util.FileSystemManager;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-
 @Slf4j
 public class MongoDBStore extends DataStore {
 
@@ -43,67 +54,69 @@ public class MongoDBStore extends DataStore {
     public static final String DESCRIPTION = "MongoDB is a document-based and distributed database.";
     @SuppressWarnings("WeakerAccess")
     public static final List<AdapterSetting> AVAILABLE_SETTINGS = ImmutableList.of(
-            new AdapterSettingBoolean("persistent", false, true, false, false),
-            new AdapterSettingList("type", false, true, false, ImmutableList.of("Mongo", "Fongo(embedded)")),
-            new AdapterSettingString("host", false, true, false, "localhost"),
-            new AdapterSettingInteger("port", false, true, false, 27017)
+            new AdapterSettingBoolean( "persistent", false, true, false, false ),
+            new AdapterSettingList( "type", false, true, false, ImmutableList.of( "Mongo", "Fongo(embedded)" ) ),
+            new AdapterSettingString( "host", false, true, false, "localhost" ),
+            new AdapterSettingInteger( "port", false, true, false, 27017 )
     );
 
     private DockerClient client;
     private MongoSchema currentSchema;
     private String databaseName = "test_db";
 
-    public MongoDBStore(int adapterId, String uniqueName, Map<String, String> settings) {
-        super(adapterId, uniqueName, settings, Boolean.parseBoolean(settings.get("persistent")));
+
+    public MongoDBStore( int adapterId, String uniqueName, Map<String, String> settings ) {
+        super( adapterId, uniqueName, settings, Boolean.parseBoolean( settings.get( "persistent" ) ) );
         FileSystemManager fileManger = FileSystemManager.getInstance();
         //String certPath = fileManger.registerNewFolder("certs").getAbsolutePath();
 
         // TODO: check if docker running or else do not show?
         DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
-                .withDockerHost("tcp://localhost:2375")
+                .withDockerHost( "tcp://localhost:2375" )
                 //.withDockerTlsVerify(true)
                 //.withDockerCertPath(certPath)
                 .build();
 
         DockerHttpClient httpClient = new ApacheDockerHttpClient.Builder()
-                .dockerHost(config.getDockerHost())
-                .sslConfig(config.getSSLConfig())
+                .dockerHost( config.getDockerHost() )
+                .sslConfig( config.getSSLConfig() )
                 .build();
 
-        client = DockerClientImpl.getInstance(config, httpClient);
+        client = DockerClientImpl.getInstance( config, httpClient );
         client.pingCmd().exec();
 
         PullImageResultCallback callback = new PullImageResultCallback();
 
-        client.pullImageCmd("mongo:latest").exec(callback);
+        client.pullImageCmd( "mongo:latest" ).exec( callback );
         try {
             // TODO: blocking for now, maybe change or show warning?
             callback.awaitCompletion();
-            log.warn("finished");
+            log.warn( "finished" );
 
-            generateContainer(uniqueName, settings);
-        } catch (InterruptedException | ConflictException e) {
+            generateContainer( uniqueName, settings );
+        } catch ( InterruptedException | ConflictException e ) {
             e.printStackTrace();
         }
     }
 
-    private void generateContainer(String uniqueName, Map<String, String> settings) {
+
+    private void generateContainer( String uniqueName, Map<String, String> settings ) {
         /* TODO DL: solution when container name already exist
         if (client.listContainersCmd().exec().stream().anyMatch(container -> container.getNames()[0].contains(uniqueName))) {
             generateContainer(uniqueName+"_1", settings);
             return;
         }*/
-        int port = Integer.parseInt(settings.get("port"));
+        int port = Integer.parseInt( settings.get( "port" ) );
         Ports bindings = new Ports();
-        bindings.bind(ExposedPort.tcp(port), Ports.Binding.bindPort(port));
-        CreateContainerCmd cmd = client.createContainerCmd("mongo")
-                .withName(uniqueName)
-                .withExposedPorts(ExposedPort.tcp(port));
+        bindings.bind( ExposedPort.tcp( port ), Ports.Binding.bindPort( port ) );
+        CreateContainerCmd cmd = client.createContainerCmd( "mongo" )
+                .withName( uniqueName )
+                .withExposedPorts( ExposedPort.tcp( port ) );
 
-        cmd.getHostConfig().withPortBindings(bindings);
+        cmd.getHostConfig().withPortBindings( bindings );
         cmd.exec();
 
-        client.startContainerCmd(uniqueName).exec();
+        client.startContainerCmd( uniqueName ).exec();
     }
 
 
@@ -112,121 +125,142 @@ public class MongoDBStore extends DataStore {
         return ADAPTER_NAME;
     }
 
-    @Override
-    public void createNewSchema(SchemaPlus rootSchema, String name) {
-        this.currentSchema = new MongoSchema("localhost", Integer.parseInt(settings.get("port")), name);
-        this.currentSchema.mongoDb.getCollection("testing_new").insertOne(new Document("test", "test"));
-    }
 
     @Override
-    public Table createTableSchema(CatalogTable combinedTable, List<CatalogColumnPlacement> columnPlacementsOnStore) {
-        return new MongoTable(combinedTable.name);
+    public void createNewSchema( SchemaPlus rootSchema, String name ) {
+        this.currentSchema = new MongoSchema( "localhost", Integer.parseInt( settings.get( "port" ) ), name );
+        this.currentSchema.mongoDb.getCollection( "testing_new" ).insertOne( new Document( "test", "test" ) );
     }
+
+
+    @Override
+    public Table createTableSchema( CatalogTable combinedTable, List<CatalogColumnPlacement> columnPlacementsOnStore ) {
+        return new MongoTable( combinedTable.name );
+    }
+
 
     @Override
     public Schema getCurrentSchema() {
         return this.currentSchema;
     }
 
+
     @Override
-    public void truncate(Context context, CatalogTable table) {
+    public void truncate( Context context, CatalogTable table ) {
 
     }
 
+
     @Override
-    public boolean prepare(PolyXid xid) {
+    public boolean prepare( PolyXid xid ) {
         return true;
     }
 
+
     @Override
-    public void commit(PolyXid xid) {
+    public void commit( PolyXid xid ) {
 
     }
 
+
     @Override
-    public void rollback(PolyXid xid) {
+    public void rollback( PolyXid xid ) {
 
     }
+
 
     @Override
     public List<AdapterSetting> getAvailableSettings() {
         return AVAILABLE_SETTINGS;
     }
 
+
     @Override
     public void shutdown() {
-        client.stopContainerCmd(getUniqueName()).exec();
-        client.removeContainerCmd(getUniqueName()).exec();
+        client.stopContainerCmd( getUniqueName() ).exec();
+        client.removeContainerCmd( getUniqueName() ).exec();
     }
 
+
     @Override
-    protected void reloadSettings(List<String> updatedSettings) {
+    protected void reloadSettings( List<String> updatedSettings ) {
 
     }
 
+
     @Override
-    public void createTable(Context context, CatalogTable catalogTable) {
+    public void createTable( Context context, CatalogTable catalogTable ) {
         Catalog catalog = Catalog.getInstance();
-        this.currentSchema.mongoDb.createCollection(catalogTable.name);
+        this.currentSchema.mongoDb.createCollection( catalogTable.name );
 
-        catalogTable.columnIds.forEach(id -> {
-            String name = catalog.getColumn(id).name;
-            this.currentSchema.mongoDb.createCollection(name);
-        });
+        catalogTable.columnIds.forEach( id -> {
+            String name = catalog.getColumn( id ).name;
+            this.currentSchema.mongoDb.createCollection( name );
+        } );
 
-        for (CatalogColumnPlacement placement : catalog.getColumnPlacementsOnAdapter(getAdapterId(), catalogTable.id)) {
+        for ( CatalogColumnPlacement placement : catalog.getColumnPlacementsOnAdapter( getAdapterId(), catalogTable.id ) ) {
             catalog.updateColumnPlacementPhysicalNames(
                     getAdapterId(),
                     placement.columnId,
                     databaseName,
                     catalogTable.name,
                     placement.physicalColumnName,
-                    true);
+                    true );
         }
     }
 
-    @Override
-    public void dropTable(Context context, CatalogTable combinedTable) {
-        this.currentSchema.mongoDb.getCollection(combinedTable.name).drop();
-    }
 
     @Override
-    public void addColumn(Context context, CatalogTable catalogTable, CatalogColumn catalogColumn) {
-        this.currentSchema.mongoDb.createCollection(catalogColumn.name);
+    public void dropTable( Context context, CatalogTable combinedTable ) {
+        this.currentSchema.mongoDb.getCollection( combinedTable.name ).drop();
     }
+
 
     @Override
-    public void dropColumn(Context context, CatalogColumnPlacement columnPlacement) {
-        this.currentSchema.mongoDb.getCollection(columnPlacement.physicalColumnName).drop();
+    public void addColumn( Context context, CatalogTable catalogTable, CatalogColumn catalogColumn ) {
+        this.currentSchema.mongoDb.createCollection( catalogColumn.name );
     }
+
 
     @Override
-    public void addIndex(Context context, CatalogIndex catalogIndex) {
-
+    public void dropColumn( Context context, CatalogColumnPlacement columnPlacement ) {
+        this.currentSchema.mongoDb.getCollection( columnPlacement.physicalColumnName ).drop();
     }
+
 
     @Override
-    public void dropIndex(Context context, CatalogIndex catalogIndex) {
+    public void addIndex( Context context, CatalogIndex catalogIndex ) {
 
     }
+
 
     @Override
-    public void updateColumnType(Context context, CatalogColumnPlacement columnPlacement, CatalogColumn catalogColumn) {
+    public void dropIndex( Context context, CatalogIndex catalogIndex ) {
 
     }
+
+
+    @Override
+    public void updateColumnType( Context context, CatalogColumnPlacement columnPlacement, CatalogColumn catalogColumn ) {
+
+    }
+
 
     @Override
     public List<AvailableIndexMethod> getAvailableIndexMethods() {
         return null;
     }
 
+
     @Override
     public AvailableIndexMethod getDefaultIndexMethod() {
         return null;
     }
 
+
     @Override
-    public List<FunctionalIndexInfo> getFunctionalIndexes(CatalogTable catalogTable) {
+    public List<FunctionalIndexInfo> getFunctionalIndexes( CatalogTable catalogTable ) {
         return null;
     }
+
 }

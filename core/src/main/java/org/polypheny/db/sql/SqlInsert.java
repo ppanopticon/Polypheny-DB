@@ -177,5 +177,6 @@ public class SqlInsert extends SqlCall {
     public void validate( SqlValidator validator, SqlValidatorScope scope ) {
         validator.validateInsert( this );
     }
+
 }
 
