@@ -27,39 +27,47 @@ import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.util.Litmus;
 
 public class MqlCreateCollection extends MqlCreate implements SqlExecutableStatement {
+
     /**
      * Creates a node.
      */
     MqlCreateCollection() {
     }
 
+
     @Override
-    public MqlNode clone(SqlParserPos pos) {
+    public MqlNode clone( SqlParserPos pos ) {
         return null;
     }
 
+
     @Override
-    public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
+    public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
 
     }
 
+
     @Override
-    public void validate(SqlValidator validator, SqlValidatorScope scope) {
+    public void validate( SqlValidator validator, SqlValidatorScope scope ) {
 
     }
 
+
     @Override
-    public <R> R accept(SqlVisitor<R> visitor) {
+    public <R> R accept( SqlVisitor<R> visitor ) {
         return null;
     }
 
+
     @Override
-    public boolean equalsDeep(MqlNode node, Litmus litmus) {
+    public boolean equalsDeep( MqlNode node, Litmus litmus ) {
         return false;
     }
 
+
     @Override
-    public void execute(Context context, Statement statement) {
+    public void execute( Context context, Statement statement ) {
 
     }
+
 }

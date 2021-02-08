@@ -36,48 +36,56 @@ public class MqlCreateDatabase extends MqlCreate implements MqlExecutableStateme
 
     String store = "test";
 
+
     /**
      * Temporary constructor to test generation of Database TODO DL: remove later?
      */
     public MqlCreateDatabase() {
     }
 
+
     @Override
-    public MqlNode clone(SqlParserPos pos) {
+    public MqlNode clone( SqlParserPos pos ) {
         return null;
     }
 
+
     @Override
-    public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
+    public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
 
     }
 
+
     @Override
-    public void validate(SqlValidator validator, SqlValidatorScope scope) {
+    public void validate( SqlValidator validator, SqlValidatorScope scope ) {
 
     }
 
+
     @Override
-    public <R> R accept(SqlVisitor<R> visitor) {
+    public <R> R accept( SqlVisitor<R> visitor ) {
         return null;
     }
 
+
     @Override
-    public boolean equalsDeep(MqlNode node, Litmus litmus) {
+    public boolean equalsDeep( MqlNode node, Litmus litmus ) {
         return false;
     }
 
+
     @Override
-    public void execute(Context context, Statement statement) {
+    public void execute( Context context, Statement statement ) {
         Catalog catalog = Catalog.getInstance();
 
         Adapter adapterInstance = AdapterManager.getInstance().getAdapter( store );
         DataStore store = (DataStore) adapterInstance;
         String name = "test_database";
 
-        catalog.addSchema(name, context.getDatabaseId(),
-                context.getCurrentUserId(), Catalog.SchemaType.DOCUMENT);
+        catalog.addSchema( name, context.getDatabaseId(),
+                context.getCurrentUserId(), Catalog.SchemaType.DOCUMENT );
 
-        store.createNewSchema(null, name);
+        store.createNewSchema( null, name );
     }
+
 }

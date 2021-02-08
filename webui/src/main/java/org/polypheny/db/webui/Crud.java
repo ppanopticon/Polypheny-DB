@@ -91,6 +91,7 @@ import org.apache.calcite.avatica.MetaImpl;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.jetty.websocket.api.Session;
 import org.polypheny.db.adapter.Adapter;
@@ -766,9 +767,9 @@ public class Crud implements InformationObserver {
                         log.error( "Caught exception while rollback", e );
                     }
                 }
-            } else if ( Pattern.matches( "(mdb[\\s].*)", query ) ) {
+            } else if ( Pattern.matches( "(mql[!].*[!])", query ) ) {
                 temp = System.nanoTime();
-                processMqlQuery( query.replace( "mdb ", "" ) );
+                processMqlQuery( StringUtils.substringBetween(query, "mql!", "!") ); //TODO DL: replace with "mql(" and ")" regex
                 results.add( new Result( "test" ).setInfo( new Debug().setGeneratedQuery( query ) ).setXid( transaction.getXid().toString() ) );
                 executionTime += System.nanoTime() - temp;
             } else {

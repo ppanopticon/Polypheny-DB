@@ -52,8 +52,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-
 // TODO DL: copied for now
+
+
 /**
  * A <code>SqlNode</code> is a SQL parse tree.
  *
@@ -63,13 +64,11 @@ public abstract class MqlNode implements Cloneable {
 
     public static final MqlNode[] EMPTY_ARRAY = new MqlNode[0];
 
-
     //protected final SqlParserPos pos;
 
 
     /**
      * Creates a node.
-     *
      */
     MqlNode() {
 
@@ -90,7 +89,7 @@ public abstract class MqlNode implements Cloneable {
     /**
      * Creates a copy of a SqlNode.
      */
-    public static <E extends MqlNode> E clone(E e ) {
+    public static <E extends MqlNode> E clone( E e ) {
         //noinspection unchecked
         //return (E) e.clone( e.pos );
         return null;
@@ -100,7 +99,7 @@ public abstract class MqlNode implements Cloneable {
     /**
      * Clones a SqlNode with a different position.
      */
-    public abstract MqlNode clone(SqlParserPos pos );
+    public abstract MqlNode clone( SqlParserPos pos );
 
 
     /**
@@ -242,7 +241,7 @@ public abstract class MqlNode implements Cloneable {
      * <li>1 + 2 + 3 is structurally equivalent to (1 + 2) + 3, but not to 1 + (2 + 3), because the '+' operator is left-associative</li>
      * </ul>
      */
-    public abstract boolean equalsDeep(MqlNode node, Litmus litmus );
+    public abstract boolean equalsDeep( MqlNode node, Litmus litmus );
 
 
     /**
@@ -252,7 +251,7 @@ public abstract class MqlNode implements Cloneable {
      * @param node2 Second expression
      * @param litmus What to do if an error is detected (expressions are not equal)
      */
-    public static boolean equalDeep(MqlNode node1, MqlNode node2, Litmus litmus ) {
+    public static boolean equalDeep( MqlNode node1, MqlNode node2, Litmus litmus ) {
         if ( node1 == null ) {
             return node2 == null;
         } else if ( node2 == null ) {
@@ -279,7 +278,7 @@ public abstract class MqlNode implements Cloneable {
     /**
      * Returns whether two lists of operands are equal.
      */
-    public static boolean equalDeep(List<MqlNode> operands0, List<MqlNode> operands1, Litmus litmus ) {
+    public static boolean equalDeep( List<MqlNode> operands0, List<MqlNode> operands1, Litmus litmus ) {
         if ( operands0.size() != operands1.size() ) {
             return litmus.fail( null );
         }
@@ -290,5 +289,6 @@ public abstract class MqlNode implements Cloneable {
         }
         return litmus.succeed();
     }
+
 }
 
