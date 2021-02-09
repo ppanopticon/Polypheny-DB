@@ -133,7 +133,7 @@ public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander 
         final MqlToRelConverter.Config config =
                 MqlToRelConverter.configBuilder().build();
         final MqlToRelConverter mqlToRelConverter = new MqlToRelConverter( this, validator, statement.getTransaction().getCatalogReader(), cluster, StandardConvertletTable.INSTANCE, config );
-        RelRoot logicalRoot = mqlToRelConverter.convertQuery( mql, false, true );
+        RelRoot logicalRoot = mqlToRelConverter.convertQuery( mql, statement, true );
 
         if ( statement.getTransaction().isAnalyze() ) {
             InformationManager queryAnalyzer = statement.getTransaction().getQueryAnalyzer();
