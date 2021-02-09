@@ -12,9 +12,9 @@ import org.polypheny.db.util.Pair;
 public interface MqlProcessor {
     MqlNode parse(String mql );
 
-    // Pair<SqlNode, RelDataType> validate(Transaction transaction, SqlNode parsed, boolean addDefaultValues );
+    Pair<MqlNode, RelDataType> validate(Transaction transaction, MqlNode parsed, boolean addDefaultValues );
 
-    // RelRoot translate(Statement statement, SqlNode sql );
+    RelRoot translate(Statement statement, MqlNode sql );
 
     PolyphenyDbSignature<?> prepareDdl(Statement statement, MqlNode parsed );
 

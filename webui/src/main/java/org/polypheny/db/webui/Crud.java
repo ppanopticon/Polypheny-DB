@@ -3265,7 +3265,13 @@ public class Crud implements InformationObserver {
 
         MqlNode parsed = mqlProcessor.parse( mql );
 
-        signature = mqlProcessor.prepareDdl( statement, parsed );
+        Pair<MqlNode, RelDataType> validated = mqlProcessor.validate( statement.getTransaction(), parsed, RuntimeConfig.ADD_DEFAULT_VALUES_IN_INSERTS.getBoolean() );
+        RelRoot logicalRoot = mqlProcessor.translate( statement, validated.left );
+
+        // signature = mqlProcessor.prepareDdl( statement, parsed );
+        // Prepare
+        signature = statement.getQueryProcessor().prepareQuery( logicalRoot );
+
 
         return signature;
     }

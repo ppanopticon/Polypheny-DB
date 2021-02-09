@@ -18,29 +18,70 @@ package org.polypheny.db.processing;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import java.util.ArrayList;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.avatica.Meta;
+import org.apache.calcite.avatica.util.Casing;
+import org.apache.commons.lang3.time.StopWatch;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.exceptions.NoTablePrimaryKeyException;
+import org.polypheny.db.config.RuntimeConfig;
+import org.polypheny.db.information.InformationGroup;
+import org.polypheny.db.information.InformationManager;
+import org.polypheny.db.information.InformationPage;
+import org.polypheny.db.information.InformationQueryPlan;
 import org.polypheny.db.jdbc.PolyphenyDbSignature;
 import org.polypheny.db.mql.MqlCreateDatabase;
 import org.polypheny.db.mql.MqlExecutableStatement;
 import org.polypheny.db.mql.MqlNode;
+import org.polypheny.db.mql2rel.MqlToRelConverter;
+import org.polypheny.db.plan.RelOptCluster;
 import org.polypheny.db.plan.RelOptTable;
+import org.polypheny.db.plan.RelOptUtil;
+import org.polypheny.db.prepare.PolyphenyDbSqlValidator;
 import org.polypheny.db.rel.RelRoot;
 import org.polypheny.db.rel.type.RelDataType;
+import org.polypheny.db.rel.type.RelDataTypeField;
+import org.polypheny.db.rel.type.RelRecordType;
+import org.polypheny.db.rel.type.StructKind;
+import org.polypheny.db.rex.RexBuilder;
 import org.polypheny.db.routing.ExecutionTimeMonitor;
+import org.polypheny.db.sql.SqlExplainFormat;
+import org.polypheny.db.sql.SqlExplainLevel;
+import org.polypheny.db.sql.parser.SqlParser;
+import org.polypheny.db.sql.parser.SqlParser.SqlParserConfig;
+import org.polypheny.db.sql2rel.RelDecorrelator;
+import org.polypheny.db.sql2rel.SqlToRelConverter;
+import org.polypheny.db.sql2rel.StandardConvertletTable;
+import org.polypheny.db.tools.RelBuilder;
 import org.polypheny.db.transaction.DeadlockException;
 import org.polypheny.db.transaction.Lock;
 import org.polypheny.db.transaction.LockManager;
 import org.polypheny.db.transaction.Statement;
+import org.polypheny.db.transaction.Transaction;
 import org.polypheny.db.transaction.TransactionImpl;
+import org.polypheny.db.util.Pair;
 
 
 /**
  * Testing basic functionality of processing Mql TODO DL
  */
+@Slf4j
 public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander {
+
+    private static final SqlParserConfig parserConfig;
+    private PolyphenyDbSqlValidator validator;
+
+
+    static {
+        SqlParser.ConfigBuilder configConfigBuilder = SqlParser.configBuilder();
+        configConfigBuilder.setCaseSensitive( RuntimeConfig.CASE_SENSITIVE.getBoolean() );
+        configConfigBuilder.setUnquotedCasing( Casing.TO_LOWER );
+        configConfigBuilder.setQuotedCasing( Casing.TO_LOWER );
+        parserConfig = configConfigBuilder.build();
+    }
+
 
     @Override
     public RelRoot expandView( RelDataType rowType, String queryString, List<String> schemaPath, List<String> viewPath ) {
@@ -51,6 +92,75 @@ public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander 
     @Override
     public MqlNode parse( String mql ) {
         return new MqlCreateDatabase();
+    }
+
+
+    @Override
+    public Pair<MqlNode, RelDataType> validate( Transaction transaction, MqlNode parsed, boolean addDefaultValues ) {
+        final StopWatch stopWatch = new StopWatch();
+        if ( log.isDebugEnabled() ) {
+            log.debug( "Validating SQL ..." );
+        }
+        stopWatch.start();
+
+        MqlNode validated;
+        RelDataType type;
+
+        validated = new MqlCreateDatabase();
+        List<RelDataTypeField> fields = new ArrayList<>();
+        type = new RelRecordType( StructKind.FULLY_QUALIFIED, fields );
+
+        stopWatch.stop();
+
+        return new Pair<>( validated, type );
+
+    }
+
+
+    @Override
+    public RelRoot translate( Statement statement, MqlNode mql ) {
+        final StopWatch stopWatch = new StopWatch();
+        if ( log.isDebugEnabled() ) {
+            log.debug( "Planning Statement ..." );
+        }
+        stopWatch.start();
+
+        MqlToRelConverter.ConfigBuilder mqlToRelConfigBuilder = MqlToRelConverter.configBuilder();
+        MqlToRelConverter.Config mqlToRelConfig = mqlToRelConfigBuilder.build();
+        final RexBuilder rexBuilder = new RexBuilder( statement.getTransaction().getTypeFactory() );
+
+        final RelOptCluster cluster = RelOptCluster.create( statement.getQueryProcessor().getPlanner(), rexBuilder );
+        final MqlToRelConverter.Config config =
+                MqlToRelConverter.configBuilder().build();
+        final MqlToRelConverter mqlToRelConverter = new MqlToRelConverter( this, validator, statement.getTransaction().getCatalogReader(), cluster, StandardConvertletTable.INSTANCE, config );
+        RelRoot logicalRoot = mqlToRelConverter.convertQuery( mql, false, true );
+
+        if ( statement.getTransaction().isAnalyze() ) {
+            InformationManager queryAnalyzer = statement.getTransaction().getQueryAnalyzer();
+            InformationPage page = new InformationPage( "Logical Query Plan" ).setLabel( "plans" );
+            page.fullWidth();
+            InformationGroup group = new InformationGroup( page, "Logical Query Plan" );
+            queryAnalyzer.addPage( page );
+            queryAnalyzer.addGroup( group );
+            InformationQueryPlan informationQueryPlan = new InformationQueryPlan(
+                    group,
+                    RelOptUtil.dumpPlan( "Logical Query Plan", logicalRoot.rel, SqlExplainFormat.JSON, SqlExplainLevel.ALL_ATTRIBUTES ) );
+            queryAnalyzer.registerInformation( informationQueryPlan );
+        }
+
+        // Decorrelate
+        final RelBuilder relBuilder = config.getRelBuilderFactory().create( cluster, null );
+        logicalRoot = logicalRoot.withRel( RelDecorrelator.decorrelateQuery( logicalRoot.rel, relBuilder ) );
+
+        if ( log.isTraceEnabled() ) {
+            log.trace( "Logical query plan: [{}]", RelOptUtil.dumpPlan( "-- Logical Plan", logicalRoot.rel, SqlExplainFormat.TEXT, SqlExplainLevel.DIGEST_ATTRIBUTES ) );
+        }
+        stopWatch.stop();
+        if ( log.isDebugEnabled() ) {
+            log.debug( "Planning Statement ... done. [{}]", stopWatch );
+        }
+
+        return logicalRoot;
     }
 
 
