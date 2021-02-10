@@ -51,6 +51,12 @@ public class MqlCreateDatabase extends MqlCreate implements MqlExecutableStateme
 
 
     @Override
+    public String toString() {
+        return null;
+    }
+
+
+    @Override
     public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
 
     }

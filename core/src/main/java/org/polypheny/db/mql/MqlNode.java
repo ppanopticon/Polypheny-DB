@@ -128,9 +128,7 @@ public abstract class MqlNode implements Cloneable {
     }
 
 
-    public String toString() {
-        return "use test";
-    }
+    public abstract String toString();
 
 
     /**

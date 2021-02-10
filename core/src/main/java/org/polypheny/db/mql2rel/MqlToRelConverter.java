@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.polypheny.db.catalog.Catalog;
+import org.polypheny.db.mql.MqlFind;
 import org.polypheny.db.mql.MqlNode;
 import org.polypheny.db.plan.RelOptCluster;
 import org.polypheny.db.plan.RelOptTable.ViewExpander;
@@ -63,6 +64,7 @@ import org.polypheny.db.sql.fun.SqlStdOperatorTable;
 import org.polypheny.db.sql.validate.SqlValidator;
 import org.polypheny.db.sql2rel.SqlRexConvertletTable;
 import org.polypheny.db.sql2rel.SubQueryConverter;
+import org.polypheny.db.tools.RelBuilder;
 import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.util.trace.PolyphenyDbTrace;
 import org.slf4j.Logger;
@@ -105,7 +107,7 @@ public class MqlToRelConverter {
 
 
     /* Creates a converter. */
-    public MqlToRelConverter( ViewExpander viewExpander, SqlValidator validator, CatalogReader catalogReader, RelOptCluster cluster, SqlRexConvertletTable convertletTable, Config config ) {
+    public MqlToRelConverter( ViewExpander viewExpander, SqlValidator validator, CatalogReader catalogReader, RelOptCluster cluster, SqlRexConvertletTable convertletTable ) {
         this.viewExpander = viewExpander;
         this.opTab =
                 (validator == null)
@@ -119,7 +121,6 @@ public class MqlToRelConverter {
         this.cluster = Objects.requireNonNull( cluster );
         this.exprConverter = new MqlNodeToRexConverterImpl( convertletTable );
         this.explainParamCount = 0;
-
     }
 
 
@@ -130,29 +131,7 @@ public class MqlToRelConverter {
      * @param top Whether the query is top-level, say if its result will become a JDBC result set; <code>false</code> if the query will be part of a view.
      */
     public RelRoot convertQuery( MqlNode query, Statement statement, final boolean top ) {
-
-        RelMetadataQuery.THREAD_PROVIDERS.set( JaninoRelMetadataProvider.of( cluster.getMetadataProvider() ) );
-        //TableScanFactory factory = TableScanFactory;
-        //RelNode result = TableScanFactory.createScan(  )
-        /*if ( top ) {
-            if ( isStream( query ) ) {
-                result = new LogicalDelta( cluster, result.getTraitSet(), result );
-            }
-        }*/
-        RelCollation collation = RelCollations.EMPTY;
-        /*if ( !query.isA( SqlKind.DML ) ) {
-            if ( isOrdered( query ) ) {
-                collation = requiredCollation( result );
-            }
-        }*/
-        //checkConvertedType( query, result );
-
-        //final RelDataType validatedRowType = validator.getValidatedNodeType( null );
-
-        Catalog catalog = Catalog.getInstance();
-
-        RelNode node = statement.getRouter().buildJoinedTableScan( statement, cluster, catalog.getColumnPlacements( 0 ) );
-        return RelRoot.of( node, query.getKind() );
+        return RelRoot.of( RelBuilder.create( statement ).scan( ((MqlFind) query).getCollection() ).build(), query.getKind() );
     }
 
 

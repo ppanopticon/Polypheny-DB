@@ -769,8 +769,12 @@ public class Crud implements InformationObserver {
                 }
             } else if ( Pattern.matches( "(mql[!].*[!])", query ) ) {
                 temp = System.nanoTime();
-                processMqlQuery( StringUtils.substringBetween(query, "mql!", "!") ); //TODO DL: replace with "mql(" and ")" regex
-                results.add( new Result( "test" ).setInfo( new Debug().setGeneratedQuery( query ) ).setXid( transaction.getXid().toString() ) );
+                PolyphenyDbSignature<?> signature = processMqlQuery( StringUtils.substringBetween(query, "mql!", "!") ); //TODO DL: replace with "mql(" and ")" regex
+                DbColumn[] header = new DbColumn[1];
+                header[0] = new DbColumn( signature.sql );
+                String[][] multiples = new String[1][1];
+                multiples[0][0] = signature.columns.stream().map( c -> c.columnName ).collect( Collectors.joining(","));
+                results.add( new Result( header, multiples ).setInfo( new Debug().setGeneratedQuery( query ) ).setXid( transaction.getXid().toString() ) );
                 executionTime += System.nanoTime() - temp;
             } else {
                 try {
@@ -3265,8 +3269,8 @@ public class Crud implements InformationObserver {
 
         MqlNode parsed = mqlProcessor.parse( mql );
 
-        Pair<MqlNode, RelDataType> validated = mqlProcessor.validate( statement.getTransaction(), parsed, RuntimeConfig.ADD_DEFAULT_VALUES_IN_INSERTS.getBoolean() );
-        RelRoot logicalRoot = mqlProcessor.translate( statement, validated.left );
+        // Pair<MqlNode, RelDataType> validated = mqlProcessor.validate( statement.getTransaction(), parsed, RuntimeConfig.ADD_DEFAULT_VALUES_IN_INSERTS.getBoolean() );
+        RelRoot logicalRoot = mqlProcessor.translate( statement, parsed );
 
         // signature = mqlProcessor.prepareDdl( statement, parsed );
         // Prepare

@@ -23,6 +23,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.util.Casing;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.exceptions.NoTablePrimaryKeyException;
@@ -34,6 +35,7 @@ import org.polypheny.db.information.InformationQueryPlan;
 import org.polypheny.db.jdbc.PolyphenyDbSignature;
 import org.polypheny.db.mql.MqlCreateDatabase;
 import org.polypheny.db.mql.MqlExecutableStatement;
+import org.polypheny.db.mql.MqlFind;
 import org.polypheny.db.mql.MqlNode;
 import org.polypheny.db.mql2rel.MqlToRelConverter;
 import org.polypheny.db.plan.RelOptCluster;
@@ -91,7 +93,7 @@ public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander 
 
     @Override
     public MqlNode parse( String mql ) {
-        return new MqlCreateDatabase();
+        return new MqlFind(mql);
     }
 
 
@@ -106,7 +108,7 @@ public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander 
         MqlNode validated;
         RelDataType type;
 
-        validated = new MqlCreateDatabase();
+        validated = parsed;
         List<RelDataTypeField> fields = new ArrayList<>();
         type = new RelRecordType( StructKind.FULLY_QUALIFIED, fields );
 
@@ -125,14 +127,11 @@ public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander 
         }
         stopWatch.start();
 
-        MqlToRelConverter.ConfigBuilder mqlToRelConfigBuilder = MqlToRelConverter.configBuilder();
-        MqlToRelConverter.Config mqlToRelConfig = mqlToRelConfigBuilder.build();
         final RexBuilder rexBuilder = new RexBuilder( statement.getTransaction().getTypeFactory() );
 
         final RelOptCluster cluster = RelOptCluster.create( statement.getQueryProcessor().getPlanner(), rexBuilder );
-        final MqlToRelConverter.Config config =
-                MqlToRelConverter.configBuilder().build();
-        final MqlToRelConverter mqlToRelConverter = new MqlToRelConverter( this, validator, statement.getTransaction().getCatalogReader(), cluster, StandardConvertletTable.INSTANCE, config );
+
+        final MqlToRelConverter mqlToRelConverter = new MqlToRelConverter( this, validator, statement.getTransaction().getCatalogReader(), cluster, StandardConvertletTable.INSTANCE );
         RelRoot logicalRoot = mqlToRelConverter.convertQuery( mql, statement, true );
 
         if ( statement.getTransaction().isAnalyze() ) {
@@ -148,17 +147,6 @@ public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander 
             queryAnalyzer.registerInformation( informationQueryPlan );
         }
 
-        // Decorrelate
-        final RelBuilder relBuilder = config.getRelBuilderFactory().create( cluster, null );
-        logicalRoot = logicalRoot.withRel( RelDecorrelator.decorrelateQuery( logicalRoot.rel, relBuilder ) );
-
-        if ( log.isTraceEnabled() ) {
-            log.trace( "Logical query plan: [{}]", RelOptUtil.dumpPlan( "-- Logical Plan", logicalRoot.rel, SqlExplainFormat.TEXT, SqlExplainLevel.DIGEST_ATTRIBUTES ) );
-        }
-        stopWatch.stop();
-        if ( log.isDebugEnabled() ) {
-            log.debug( "Planning Statement ... done. [{}]", stopWatch );
-        }
 
         return logicalRoot;
     }
