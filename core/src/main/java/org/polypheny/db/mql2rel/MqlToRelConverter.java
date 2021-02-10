@@ -42,18 +42,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.polypheny.db.catalog.Catalog;
+import org.polypheny.db.mql.MqlCreateDatabase;
 import org.polypheny.db.mql.MqlFind;
 import org.polypheny.db.mql.MqlNode;
+import org.polypheny.db.mql.TableChange;
 import org.polypheny.db.plan.RelOptCluster;
+import org.polypheny.db.plan.RelOptPlanner;
 import org.polypheny.db.plan.RelOptTable.ViewExpander;
+import org.polypheny.db.plan.RelTraitSet;
 import org.polypheny.db.prepare.Prepare.CatalogReader;
-import org.polypheny.db.rel.RelCollation;
-import org.polypheny.db.rel.RelCollations;
 import org.polypheny.db.rel.RelNode;
 import org.polypheny.db.rel.RelRoot;
-import org.polypheny.db.rel.metadata.JaninoRelMetadataProvider;
-import org.polypheny.db.rel.metadata.RelMetadataQuery;
 import org.polypheny.db.rel.type.RelDataTypeFactory;
 import org.polypheny.db.rex.RexBuilder;
 import org.polypheny.db.rex.RexNode;
@@ -131,7 +130,13 @@ public class MqlToRelConverter {
      * @param top Whether the query is top-level, say if its result will become a JDBC result set; <code>false</code> if the query will be part of a view.
      */
     public RelRoot convertQuery( MqlNode query, Statement statement, final boolean top ) {
-        return RelRoot.of( RelBuilder.create( statement ).scan( ((MqlFind) query).getCollection() ).build(), query.getKind() );
+        if ( query instanceof MqlCreateDatabase ){
+            RelNode node = RelBuilder.create( statement ).scan( "emps" ).build();
+            return RelRoot.of( RelBuilder.create( statement ).push( new TableChange() ).build(), query.getKind() );
+        }else if ( query instanceof MqlFind ){
+            return RelRoot.of( RelBuilder.create( statement ).scan( ((MqlFind) query).getCollection() ).build(), query.getKind() );
+        }
+        return null;
     }
 
 

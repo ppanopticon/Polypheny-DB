@@ -93,7 +93,12 @@ public class MqlProcessorImpl implements MqlProcessor, RelOptTable.ViewExpander 
 
     @Override
     public MqlNode parse( String mql ) {
-        return new MqlFind(mql);
+        if( mql.contains( "find" )){
+            return new MqlFind(mql);
+        }else {
+            // createDatabase
+            return new MqlCreateDatabase( mql, mql.split( " " )[1] );
+        }
     }
 
 

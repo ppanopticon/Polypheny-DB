@@ -34,13 +34,17 @@ import org.polypheny.db.util.Litmus;
 
 public class MqlCreateDatabase extends MqlCreate implements MqlExecutableStatement {
 
+    private final String database;
     String store = "test";
+    String mql;
 
 
     /**
      * Temporary constructor to test generation of Database TODO DL: remove later?
      */
-    public MqlCreateDatabase() {
+    public MqlCreateDatabase( String mql, String database ) {
+        this.mql = mql;
+        this.database = database;
     }
 
 
@@ -52,7 +56,7 @@ public class MqlCreateDatabase extends MqlCreate implements MqlExecutableStateme
 
     @Override
     public String toString() {
-        return null;
+        return mql;
     }
 
 
