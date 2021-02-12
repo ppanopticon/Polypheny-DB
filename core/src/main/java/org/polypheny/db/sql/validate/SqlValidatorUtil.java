@@ -229,7 +229,7 @@ public class SqlValidatorUtil {
         if ( PolyTypeUtil.inCharFamily( type ) ) {
             Charset strCharset = type.getCharset();
             Charset colCharset = type.getCollation().getCharset();
-            /*
+
             assert null != strCharset;
             assert null != colCharset;
             if ( !strCharset.equals( colCharset ) ) {
@@ -237,7 +237,7 @@ public class SqlValidatorUtil {
                     // todo: enable this checking when we have a charset to collation mapping
                     throw new Error( type.toString() + " was found to have charset '" + strCharset.name() + "' and a mismatched collation charset '" + colCharset.name() + "'" );
                 }
-            }*/
+            }
         }
     }
 

@@ -1777,8 +1777,10 @@ public class CatalogImpl extends Catalog {
 
         // TODO DL: remove
         Integer fixedLength = length;
+        Collation fixedCollation = collation;
         if( type == PolyType.JSON){
             fixedLength = 300;
+            fixedCollation = Collation.CASE_INSENSITIVE;
         }
 
 
@@ -1797,7 +1799,7 @@ public class CatalogImpl extends Catalog {
                 dimension,
                 cardinality,
                 nullable,
-                collation,
+                fixedCollation,
                 null );
 
         synchronized ( this ) {
