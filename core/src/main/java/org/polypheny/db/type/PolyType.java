@@ -364,6 +364,12 @@ public enum PolyType {
             true,
             Types.BINARY,
             PolyTypeFamily.MULTIMEDIA
+    ),
+    JSON(
+            PrecScale.NO_NO,
+            true,
+            Types.VARCHAR,
+            PolyTypeFamily.CHARACTER
     );
 
 
@@ -1169,7 +1175,7 @@ public enum PolyType {
 
 
     public static Set<PolyType> availableTypes() {
-        return ImmutableSet.of( BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, DECIMAL, REAL, DOUBLE, DATE, TIME, TIMESTAMP, VARCHAR, FILE, IMAGE, VIDEO, SOUND );
+        return ImmutableSet.of( BOOLEAN, TINYINT, SMALLINT, INTEGER, JSON, BIGINT, DECIMAL, REAL, DOUBLE, DATE, TIME, TIMESTAMP, VARCHAR, FILE, IMAGE, VIDEO, SOUND );
     }
 
 

@@ -1775,6 +1775,13 @@ public class CatalogImpl extends Catalog {
             throw new RuntimeException( "Invalid scale! Scale can not be larger than length." );
         }
 
+        // TODO DL: remove
+        Integer fixedLength = length;
+        if( type == PolyType.JSON){
+            fixedLength = 300;
+        }
+
+
         long id = columnIdBuilder.getAndIncrement();
         CatalogColumn column = new CatalogColumn(
                 id,
@@ -1785,7 +1792,7 @@ public class CatalogImpl extends Catalog {
                 position,
                 type,
                 collectionsType,
-                length,
+                fixedLength,
                 scale,
                 dimension,
                 cardinality,

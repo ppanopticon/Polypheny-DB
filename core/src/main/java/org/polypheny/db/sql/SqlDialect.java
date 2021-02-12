@@ -571,6 +571,7 @@ public class SqlDialect {
         if ( type instanceof BasicPolyType ) {
             int precision = type.getPrecision();
             switch ( type.getPolyType() ) {
+                case JSON:
                 case VARCHAR:
                     // if needed, adjust varchar length to max length supported by the system
                     int maxPrecision = getTypeSystem().getMaxPrecision( type.getPolyType() );

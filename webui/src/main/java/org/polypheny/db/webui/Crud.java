@@ -774,7 +774,9 @@ public class Crud implements InformationObserver {
                 header[0] = new DbColumn( signature.sql );
                 String[][] multiples = new String[1][1];
                 multiples[0][0] = signature.columns.stream().map( c -> c.columnName ).collect( Collectors.joining(","));
-                results.add( new Result( header, multiples ).setInfo( new Debug().setGeneratedQuery( query ) ).setXid( transaction.getXid().toString() ) );
+                result = new Result( header, multiples ).setGeneratedQuery( query );
+                results.add( result );
+
                 executionTime += System.nanoTime() - temp;
             } else {
                 try {

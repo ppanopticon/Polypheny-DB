@@ -541,6 +541,7 @@ public class RexBuilder {
             switch ( toType.getPolyType() ) {
                 case CHAR:
                     return PolyTypeUtil.comparePrecision( toType.getPrecision(), length ) == 0;
+                case JSON:
                 case VARCHAR:
                     return PolyTypeUtil.comparePrecision( toType.getPrecision(), length ) >= 0;
                 default:
@@ -1153,6 +1154,7 @@ public class RexBuilder {
         switch ( type.getPolyType() ) {
             case CHAR:
                 return new NlsString( Spaces.of( type.getPrecision() ), null, null );
+            case JSON:
             case VARCHAR:
                 return new NlsString( "", null, null );
             case BINARY:
