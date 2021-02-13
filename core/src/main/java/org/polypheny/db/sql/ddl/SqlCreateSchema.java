@@ -66,6 +66,7 @@ public class SqlCreateSchema extends SqlCreate implements SqlExecutableStatement
 
     private static final SqlOperator OPERATOR = new SqlSpecialOperator( "CREATE SCHEMA", SqlKind.CREATE_SCHEMA );
 
+
     /**
      * Creates a SqlCreateSchema.
      */
@@ -110,7 +111,7 @@ public class SqlCreateSchema extends SqlCreate implements SqlExecutableStatement
                 throw SqlUtil.newContextException( name.getParserPosition(), RESOURCE.schemaExists( name.getSimple() ) );
             }
         } else {
-            catalog.addSchema(
+            long id = catalog.addSchema(
                     name.getSimple(),
                     context.getDatabaseId(),
                     context.getCurrentUserId(),

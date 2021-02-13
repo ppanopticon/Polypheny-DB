@@ -46,13 +46,8 @@ public class Schema {
      * @param name name of the schema
      * @param type type of the schema, e.g. relational
      */
-    public Schema( final String name, final String type ) {
+    public Schema( final String name, final SchemaType type ) {
         this.name = name;
-        try {
-            this.type = SchemaType.getByName( type );
-        } catch ( UnknownSchemaTypeException e ) {
-            this.type = SchemaType.RELATIONAL;
-        }
+        this.type = type;
     }
-
 }
