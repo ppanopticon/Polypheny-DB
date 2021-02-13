@@ -18,6 +18,8 @@ package org.polypheny.db.webui.models;
 
 
 import lombok.Getter;
+import org.polypheny.db.catalog.Catalog.SchemaType;
+import org.polypheny.db.catalog.exceptions.UnknownSchemaTypeException;
 
 
 /**
@@ -27,7 +29,7 @@ import lombok.Getter;
 public class Schema {
 
     private String name;
-    private String type; // TODO: enum
+    private SchemaType type; // TODO: enum
 
     // fields for creation
     private boolean create;
@@ -46,7 +48,11 @@ public class Schema {
      */
     public Schema( final String name, final String type ) {
         this.name = name;
-        this.type = type;
+        try {
+            this.type = SchemaType.getByName( type );
+        } catch ( UnknownSchemaTypeException e ) {
+            this.type = SchemaType.RELATIONAL;
+        }
     }
 
 }

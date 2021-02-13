@@ -109,6 +109,7 @@ import org.polypheny.db.adapter.index.IndexManager;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.Catalog.ConstraintType;
 import org.polypheny.db.catalog.Catalog.ForeignKeyOption;
+import org.polypheny.db.catalog.Catalog.SchemaType;
 import org.polypheny.db.catalog.Catalog.TableType;
 import org.polypheny.db.catalog.NameGenerator;
 import org.polypheny.db.catalog.entity.CatalogAdapter;
@@ -128,7 +129,6 @@ import org.polypheny.db.catalog.exceptions.UnknownTableException;
 import org.polypheny.db.catalog.exceptions.UnknownUserException;
 import org.polypheny.db.config.Config;
 import org.polypheny.db.config.Config.ConfigListener;
-import org.polypheny.db.config.PolyphenyDbConnectionConfig;
 import org.polypheny.db.config.RuntimeConfig;
 import org.polypheny.db.exploreByExample.Explore;
 import org.polypheny.db.exploreByExample.ExploreManager;
@@ -2484,7 +2484,12 @@ public class Crud implements InformationObserver {
 
         // create schema
         if ( schema.isCreate() && !schema.isDrop() ) {
-            StringBuilder query = new StringBuilder( "CREATE SCHEMA " );
+            StringBuilder query = new StringBuilder( "CREATE " );
+            if ( schema.getType() == SchemaType.DOCUMENT ) {
+                query.append( "DOCUMENT " );
+            }
+            query.append( "SCHEMA " );
+
             query.append( "\"" ).append( schema.getName() ).append( "\"" );
             if ( schema.getAuthorization() != null && !schema.getAuthorization().equals( "" ) ) {
                 query.append( " AUTHORIZATION " ).append( schema.getAuthorization() );
@@ -3486,6 +3491,11 @@ public class Crud implements InformationObserver {
             }
         }
         return directoryToBeDeleted.delete();
+    }
+
+
+    public Map<String, SchemaType> getTypeSchemas( Request request, Response response ) {
+        return catalog.getSchemas( 1, null ).stream().collect( Collectors.toMap( CatalogSchema::getName, CatalogSchema::getSchemaType ) );
     }
 
 

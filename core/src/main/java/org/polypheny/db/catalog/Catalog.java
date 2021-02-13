@@ -17,6 +17,7 @@
 package org.polypheny.db.catalog;
 
 
+import com.google.gson.annotations.SerializedName;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.util.ArrayList;
@@ -1004,7 +1005,9 @@ public abstract class Catalog {
 
 
     public enum SchemaType {
+        @SerializedName("relational")
         RELATIONAL( 1 ),
+        @SerializedName("document")
         DOCUMENT(2);
         // GRAPH, DOCUMENT, ...
 

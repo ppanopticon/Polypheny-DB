@@ -62,15 +62,17 @@ public class SqlCreateSchema extends SqlCreate implements SqlExecutableStatement
 
     private final SqlIdentifier name;
 
-    private static final SqlOperator OPERATOR = new SqlSpecialOperator( "CREATE SCHEMA", SqlKind.CREATE_SCHEMA );
+    private final SchemaType type;
 
+    private static final SqlOperator OPERATOR = new SqlSpecialOperator( "CREATE SCHEMA", SqlKind.CREATE_SCHEMA );
 
     /**
      * Creates a SqlCreateSchema.
      */
-    SqlCreateSchema( SqlParserPos pos, boolean replace, boolean ifNotExists, SqlIdentifier name ) {
+    SqlCreateSchema( SqlParserPos pos, boolean replace, boolean ifNotExists, SqlIdentifier name, SchemaType schemaType ) {
         super( OPERATOR, pos, replace, ifNotExists );
         this.name = Objects.requireNonNull( name );
+        this.type = schemaType;
     }
 
 
@@ -112,7 +114,7 @@ public class SqlCreateSchema extends SqlCreate implements SqlExecutableStatement
                     name.getSimple(),
                     context.getDatabaseId(),
                     context.getCurrentUserId(),
-                    SchemaType.RELATIONAL );
+                    type );
         }
     }
 
