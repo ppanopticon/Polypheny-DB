@@ -19,7 +19,10 @@ package org.polypheny.db.catalog;
 
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,8 @@ import org.polypheny.db.information.InformationTable;
 @Slf4j
 public class CatalogInfoPage implements PropertyChangeListener {
 
+    private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern( "HH:mm:ss" );
+
     private final InformationManager infoManager;
     private final Catalog catalog;
     private final InformationTable databaseInformation;
@@ -40,6 +45,8 @@ public class CatalogInfoPage implements PropertyChangeListener {
     private final InformationTable columnInformation;
     private final InformationTable indexInformation;
     private final InformationTable adapterInformation;
+
+    private final InformationTable debugInformation;
 
 
     public CatalogInfoPage( Catalog catalog ) {
@@ -55,6 +62,8 @@ public class CatalogInfoPage implements PropertyChangeListener {
         this.tableInformation = addCatalogInformationTable( page, "Tables", Arrays.asList( "ID", "Name", "DatabaseID", "SchemaID" ) );
         this.columnInformation = addCatalogInformationTable( page, "Columns", Arrays.asList( "ID", "Name", "DatabaseID", "SchemaID", "TableID" ) );
         this.indexInformation = addCatalogInformationTable( page, "Indexes", Arrays.asList( "ID", "Name", "KeyID", "Location", "Method", "Unique" ) );
+
+        this.debugInformation = addCatalogInformationTable( page, "Debug", Arrays.asList( "Time", "Message" ) );
 
         addPersistentInfo( page );
 
@@ -84,7 +93,16 @@ public class CatalogInfoPage implements PropertyChangeListener {
 
     @Override
     public void propertyChange( PropertyChangeEvent propertyChangeEvent ) {
+        addDebugMessage( propertyChangeEvent );
         resetCatalogInformation();
+    }
+
+
+    private void addDebugMessage( PropertyChangeEvent propertyChangeEvent ) {
+        String time = LocalTime.now().format( formatter );
+        String msg = String.format( "[Property]: %s, [New]: %s, [Old]: %s", propertyChangeEvent.getPropertyName(), propertyChangeEvent.getNewValue(), propertyChangeEvent.getOldValue() );
+        debugInformation.addRow( time, msg );
+
     }
 
 

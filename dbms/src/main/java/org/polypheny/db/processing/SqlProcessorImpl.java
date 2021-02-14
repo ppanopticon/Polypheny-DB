@@ -25,9 +25,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.avatica.AvaticaSeverity;
 import org.apache.calcite.avatica.Meta;
@@ -288,19 +288,24 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
             CatalogTable catalogTable = getCatalogTable( transaction, (SqlIdentifier) insert.getTargetTable() );
             SchemaType schemaType = Catalog.getInstance().getSchema( catalogTable.schemaId ).schemaType;
 
-            List<JsonObject> jsons = getJsonObjects( insert, oldColumnList, catalogTable );
-            int hiddenPos;
+            List<JsonObject> jsons = null;
+            Set<String> newColsNames = null;
+            if ( schemaType == SchemaType.DOCUMENT ) {
+                jsons = getJsonObjects( insert, oldColumnList, catalogTable, transaction.createStatement() );
+                newColsNames = getNewColumns( insert, oldColumnList, catalogTable );
+            }
+
+            catalogTable = getCatalogTable( transaction, (SqlIdentifier) insert.getTargetTable() );
 
             SqlNodeList newColumnList = new SqlNodeList( SqlParserPos.ZERO );
-            SqlNode[][] newValues = new SqlNode[((SqlBasicCall) insert.getSource()).getOperands().length][catalogTable.columnIds.size()];
+            int size = (int) catalogTable.columnIds.size();
+            SqlNode[][] newValues = new SqlNode[((SqlBasicCall) insert.getSource()).getOperands().length][size];
             int pos = 0;
-            for ( CatalogColumn column : Catalog.getInstance().getColumns( catalogTable.id ) ) {
+            List<CatalogColumn> columns = Catalog.getInstance().getColumns( catalogTable.id );
+            for ( CatalogColumn column : columns ) {
+
                 // Add column
                 newColumnList.add( new SqlIdentifier( column.name, SqlParserPos.ZERO ) );
-
-                if ( column.name.equals( "_hidden_" ) ) {
-                    hiddenPos = pos; // TODO DL: not that clever, works for now
-                }
 
                 // Add value (loop because it can be a multi insert (insert into test(id) values (1),(2),(3))
                 int i = 0;
@@ -342,7 +347,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                                     throw new PolyphenyDbException( "Not yet supported default value type: " + defaultValue.type );
                             }
                         } else if ( column.nullable ) {
-                            if ( schemaType == SchemaType.DOCUMENT && column.name.equals( "_hidden_" ) ) {
+                            if ( schemaType == SchemaType.DOCUMENT && column.name.equals( "$hidden$" ) ) {
                                 newValues[i][pos] = SqlCharStringLiteral.createCharString( jsons.get( i ).toString(), SqlParserPos.ZERO );
                             } else {
                                 newValues[i][pos] = SqlLiteral.createNull( SqlParserPos.ZERO );
@@ -356,6 +361,10 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                 }
                 pos++;
             }
+
+            // add new generated Columns
+            // newColsNames.forEach( name -> newColumnList.add( new SqlIdentifier( name, SqlParserPos.ZERO ) ) );
+
             // Add new column list
             insert.setColumnList( newColumnList );
             // Replace value in parser tree
@@ -373,29 +382,51 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
     /**
      * Parse the unknown columns into a JSON
      */
-    private ArrayList<JsonObject> getJsonObjects( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable ) {
+    private ArrayList<JsonObject> getJsonObjects( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable, Statement statement ) {
         ArrayList<JsonObject> jsons = new ArrayList<>();
         List<String> columnNames = catalogTable.getColumnNames();
+        Catalog catalog = Catalog.getInstance();
 
-        List<Integer> docIndex = new ArrayList<>();
-        int entry = 0;
-        for ( SqlNode sqlNode : ((SqlBasicCall) insert.getSource()).getOperands() ) {
+        for ( int entry = 0; entry < ((SqlBasicCall) insert.getSource()).getOperands().length; entry++ ) {
             int pos = 0;
             JsonObject json = new JsonObject();
             for ( SqlNode column : oldColumnList.getList() ) {
 
                 // check if column is part of c
                 String name = ((SqlIdentifier) column).names.get( 0 );
+
                 if ( !(columnNames.contains( name )) ) {
+                    catalog.addDocumentColumn( catalogTable.id, name, statement ); // TODO DL: fix scope
+
                     JsonElement val = JsonParser.parseString( ((SqlBasicCall) ((SqlBasicCall) insert.getSource()).getOperands()[entry]).getOperands()[pos].toString() );
                     json.add( name, val );
                 }
                 pos++;
             }
             jsons.add( json );
-            entry++;
         }
         return jsons;
+    }
+
+
+    /**
+     * Filters column names which are beeing added in this query
+     *
+     * @return set of new column names
+     */
+    private HashSet<String> getNewColumns( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable ) {
+        HashSet<String> newCols = new HashSet<String>();
+        List<String> columnNames = catalogTable.getColumnNames();
+
+        for ( SqlNode column : oldColumnList.getList() ) {
+
+            String name = ((SqlIdentifier) column).names.get( 0 );
+
+            if ( !(columnNames.contains( name )) ) {
+                newCols.add( name );
+            }
+        }
+        return newCols;
     }
 
 

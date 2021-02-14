@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.Catalog.Collation;
+import org.polypheny.db.catalog.Catalog.SchemaType;
 import org.polypheny.db.rel.type.RelDataType;
 import org.polypheny.db.rel.type.RelDataTypeFactory;
 import org.polypheny.db.type.PolyType;
@@ -42,6 +43,7 @@ public final class CatalogColumn implements CatalogEntity, Comparable<CatalogCol
     public final int position;
     public final PolyType type;
     public final PolyType collectionsType;
+    public final SchemaType schemaType;
     public final Integer length; // JDBC length or precision depending on type
     public final Integer scale; // decimal digits
     public final Integer dimension;
@@ -60,6 +62,7 @@ public final class CatalogColumn implements CatalogEntity, Comparable<CatalogCol
             final int position,
             @NonNull final PolyType type,
             final PolyType collectionsType,
+            final SchemaType schemaType,
             final Integer length,
             final Integer scale,
             final Integer dimension,
@@ -75,6 +78,7 @@ public final class CatalogColumn implements CatalogEntity, Comparable<CatalogCol
         this.position = position;
         this.type = type;
         this.collectionsType = collectionsType;
+        this.schemaType = schemaType;
         this.length = length;
         this.scale = scale;
         this.dimension = dimension;

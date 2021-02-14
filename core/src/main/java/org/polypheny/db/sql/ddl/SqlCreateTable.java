@@ -40,7 +40,6 @@ import com.google.common.collect.ImmutableList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
-import java.util.TimeZone;
 import org.apache.calcite.linq4j.Ord;
 import org.polypheny.db.adapter.DataStore;
 import org.polypheny.db.catalog.Catalog;
@@ -71,7 +70,6 @@ import org.polypheny.db.sql.SqlSpecialOperator;
 import org.polypheny.db.sql.SqlUtil;
 import org.polypheny.db.sql.SqlWriter;
 import org.polypheny.db.sql.parser.SqlParserPos;
-import org.polypheny.db.sql.parser.SqlParserUtil;
 import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.type.PolyType;
 import org.polypheny.db.type.PolyTypeFamily;
@@ -203,7 +201,7 @@ public class SqlCreateTable extends SqlCreate implements SqlExecutableStatement 
             }
             if ( catalog.getSchema( schemaId ).schemaType == SchemaType.DOCUMENT ) {
                 SqlDataTypeSpec spec = new SqlDataTypeSpec( null, new SqlIdentifier( "JSON", SqlParserPos.ZERO ), -1, -1, -1, -1, null, null, true, SqlParserPos.ZERO );
-                SqlColumnDeclaration col = new SqlColumnDeclaration( pos, new SqlIdentifier( "_hidden_", SqlParserPos.ZERO ), spec, null, null, ColumnStrategy.NULLABLE );
+                SqlColumnDeclaration col = new SqlColumnDeclaration( pos, new SqlIdentifier( "$hidden$", SqlParserPos.ZERO ), spec, null, null, ColumnStrategy.NULLABLE );
                 addColumn( new Ord<>( position, col ), tableId, position, catalog, stores );
             }
 

@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -81,6 +82,8 @@ import org.polypheny.db.catalog.exceptions.UnknownTableIdRuntimeException;
 import org.polypheny.db.catalog.exceptions.UnknownUserException;
 import org.polypheny.db.catalog.exceptions.UnknownUserIdRuntimeException;
 import org.polypheny.db.config.RuntimeConfig;
+import org.polypheny.db.routing.Router;
+import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.transaction.Transaction;
 import org.polypheny.db.type.PolyType;
 import org.polypheny.db.type.PolyTypeFamily;
@@ -115,6 +118,8 @@ public class CatalogImpl extends Catalog {
     private static BTreeMap<Object[], CatalogColumn> columnNames;
     private static BTreeMap<Object[], CatalogColumnPlacement> columnPlacements;
 
+    private static NavigableSet<Object[]> documentColumns;
+
     private static HTreeMap<Integer, CatalogAdapter> adapters;
     private static HTreeMap<String, CatalogAdapter> adapterNames;
 
@@ -140,6 +145,7 @@ public class CatalogImpl extends Catalog {
     private static final AtomicLong schemaIdBuilder = new AtomicLong( 1 );
     private static final AtomicLong tableIdBuilder = new AtomicLong( 1 );
     private static final AtomicLong columnIdBuilder = new AtomicLong( 1 );
+    private static final AtomicLong documentColumnBuilder = new AtomicLong( 1 );
 
     private static final AtomicLong keyIdBuilder = new AtomicLong( 1 );
     private static final AtomicLong constraintIdBuilder = new AtomicLong( 1 );
@@ -149,6 +155,7 @@ public class CatalogImpl extends Catalog {
     private static final AtomicLong physicalPositionBuilder = new AtomicLong();
 
     private final String path;
+    private Router router;
     Comparator<CatalogColumn> columnComparator = Comparator.comparingInt( o -> o.position );
     // TODO DL check solution for all
 
@@ -243,6 +250,12 @@ public class CatalogImpl extends Catalog {
             new CatalogValidator().startCheck();
 
         }
+    }
+
+
+    @Override
+    public void setRouter( Router router ) {
+        this.router = router;
     }
 
 
@@ -484,6 +497,8 @@ public class CatalogImpl extends Catalog {
         columnNames = db.treeMap( "columnNames", new SerializerArrayTuple( Serializer.LONG, Serializer.LONG, Serializer.LONG, Serializer.STRING ), Serializer.JAVA ).createOrOpen();
         //noinspection unchecked
         columnPlacements = db.treeMap( "columnPlacement", new SerializerArrayTuple( Serializer.INTEGER, Serializer.LONG ), Serializer.JAVA ).createOrOpen();
+
+        documentColumns = db.treeSet( "documentColumns", new SerializerArrayTuple( Serializer.LONG, Serializer.STRING ) ).createOrOpen();
     }
 
 
@@ -1752,6 +1767,11 @@ public class CatalogImpl extends Catalog {
     }
 
 
+    public long addColumn( String name, long tableId, int position, PolyType type, PolyType collectionsType, Integer length, Integer scale, Integer dimension, Integer cardinality, boolean nullable, Collation collation ) {
+        return addColumn( name, tableId, position, type, collectionsType, length, scale, dimension, cardinality, nullable, collation, SchemaType.RELATIONAL );
+    }
+
+
     /**
      * Adds a column.
      *
@@ -1766,7 +1786,7 @@ public class CatalogImpl extends Catalog {
      * @return The id of the inserted column
      */
     @Override
-    public long addColumn( String name, long tableId, int position, PolyType type, PolyType collectionsType, Integer length, Integer scale, Integer dimension, Integer cardinality, boolean nullable, Collation collation ) {
+    public long addColumn( String name, long tableId, int position, PolyType type, PolyType collectionsType, Integer length, Integer scale, Integer dimension, Integer cardinality, boolean nullable, Collation collation, SchemaType schemaType ) {
         CatalogTable table = getTable( tableId );
         if ( type.getFamily() == PolyTypeFamily.CHARACTER && collation == null ) {
             throw new RuntimeException( "Collation is not allowed to be null for char types." );
@@ -1778,11 +1798,10 @@ public class CatalogImpl extends Catalog {
         // TODO DL: remove
         Integer fixedLength = length;
         Collation fixedCollation = collation;
-        if( type == PolyType.JSON){
+        if ( type == PolyType.JSON ) {
             fixedLength = 300;
             fixedCollation = Collation.CASE_INSENSITIVE;
         }
-
 
         long id = columnIdBuilder.getAndIncrement();
         CatalogColumn column = new CatalogColumn(
@@ -1794,6 +1813,7 @@ public class CatalogImpl extends Catalog {
                 position,
                 type,
                 collectionsType,
+                schemaType,
                 fixedLength,
                 scale,
                 dimension,
@@ -1822,6 +1842,37 @@ public class CatalogImpl extends Catalog {
 
 
     /**
+     * Adds a documentColumn name to the documentColumn storage,
+     * and generates a matching CatalogColumn,
+     * should be as fast as possible and not concern if column already exists.
+     *
+     * @param tableId Id of target-table to which the column belongs
+     * @param name Name of the documentColumn
+     * @param statement
+     */
+    @Override
+    public void addDocumentColumn( long tableId, String name, Statement statement ) {
+
+        if ( !documentColumns.contains( new Object[]{ tableId, name } ) ) {
+
+            long id = addColumn( name, tableId, getColumns( tableId ).size(), PolyType.JSON, PolyType.JSON, 300, -1, -1, -1, true, Collation.getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() ), SchemaType.DOCUMENT );
+
+
+            List<DataStore> stores = router.createTable( getTable( tableId ).schemaId, statement );
+            for ( DataStore s : stores ) {
+                addColumnPlacement( s.getAdapterId(), id, PlacementType.AUTOMATIC, null, null, null );
+            }
+
+            synchronized ( this ) {
+                documentColumns.add( new Object[]{ tableId, name } );
+            }
+        }
+
+        listeners.firePropertyChange( "documentColumn", null, tableId + " " + name );
+    }
+
+
+    /**
      * Renames a column
      *
      * @param columnId The if of the column to rename
@@ -1830,7 +1881,7 @@ public class CatalogImpl extends Catalog {
     @Override
     public void renameColumn( long columnId, String name ) {
         CatalogColumn old = getColumn( columnId );
-        CatalogColumn column = new CatalogColumn( old.id, name, old.tableId, old.schemaId, old.databaseId, old.position, old.type, old.collectionsType, old.length, old.scale, old.dimension, old.cardinality, old.nullable, old.collation, old.defaultValue );
+        CatalogColumn column = new CatalogColumn( old.id, name, old.tableId, old.schemaId, old.databaseId, old.position, old.type, old.collectionsType, old.schemaType, old.length, old.scale, old.dimension, old.cardinality, old.nullable, old.collation, old.defaultValue );
         synchronized ( this ) {
             columns.replace( columnId, column );
             columnNames.remove( new Object[]{ column.databaseId, column.schemaId, column.tableId, old.name } );
@@ -1849,7 +1900,7 @@ public class CatalogImpl extends Catalog {
     @Override
     public void setColumnPosition( long columnId, int position ) {
         CatalogColumn old = getColumn( columnId );
-        CatalogColumn column = new CatalogColumn( old.id, old.name, old.tableId, old.schemaId, old.databaseId, position, old.type, old.collectionsType, old.length, old.scale, old.dimension, old.cardinality, old.nullable, old.collation, old.defaultValue );
+        CatalogColumn column = new CatalogColumn( old.id, old.name, old.tableId, old.schemaId, old.databaseId, position, old.type, old.collectionsType, old.schemaType, old.length, old.scale, old.dimension, old.cardinality, old.nullable, old.collation, old.defaultValue );
         synchronized ( this ) {
             columns.replace( columnId, column );
             columnNames.replace( new Object[]{ column.databaseId, column.schemaId, column.tableId, column.name }, column );
@@ -1894,7 +1945,7 @@ public class CatalogImpl extends Catalog {
             Collation collation = type.getFamily() == PolyTypeFamily.CHARACTER
                     ? Collation.getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() )
                     : null;
-            CatalogColumn column = new CatalogColumn( old.id, old.name, old.tableId, old.schemaId, old.databaseId, old.position, type, collectionsType, length, scale, dimension, cardinality, old.nullable, collation, old.defaultValue );
+            CatalogColumn column = new CatalogColumn( old.id, old.name, old.tableId, old.schemaId, old.databaseId, old.position, type, collectionsType, old.schemaType, length, scale, dimension, cardinality, old.nullable, collation, old.defaultValue );
             synchronized ( this ) {
                 columns.replace( columnId, column );
                 columnNames.replace( new Object[]{ old.databaseId, old.schemaId, old.tableId, old.name }, column );
@@ -1938,6 +1989,7 @@ public class CatalogImpl extends Catalog {
                     old.position,
                     old.type,
                     old.collectionsType,
+                    old.schemaType,
                     old.length,
                     old.scale,
                     old.dimension,
@@ -1970,7 +2022,7 @@ public class CatalogImpl extends Catalog {
         if ( old.type.getFamily() != PolyTypeFamily.CHARACTER ) {
             throw new RuntimeException( "Illegal attempt to set collation for a non-char column!" );
         }
-        CatalogColumn column = new CatalogColumn( old.id, old.name, old.tableId, old.schemaId, old.databaseId, old.position, old.type, old.collectionsType, old.length, old.scale, old.dimension, old.cardinality, old.nullable, collation, old.defaultValue );
+        CatalogColumn column = new CatalogColumn( old.id, old.name, old.tableId, old.schemaId, old.databaseId, old.position, old.type, old.collectionsType, old.schemaType, old.length, old.scale, old.dimension, old.cardinality, old.nullable, collation, old.defaultValue );
         synchronized ( this ) {
             columns.replace( columnId, column );
             columnNames.replace( new Object[]{ old.databaseId, old.schemaId, old.tableId, old.name }, column );
@@ -2049,6 +2101,7 @@ public class CatalogImpl extends Catalog {
                 old.position,
                 old.type,
                 old.collectionsType,
+                old.schemaType,
                 old.length,
                 old.scale,
                 old.dimension,
@@ -2081,6 +2134,7 @@ public class CatalogImpl extends Catalog {
                 old.position,
                 old.type,
                 old.collectionsType,
+                old.schemaType,
                 old.length,
                 old.scale,
                 old.dimension,

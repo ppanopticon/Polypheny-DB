@@ -41,6 +41,7 @@ import org.polypheny.db.iface.QueryInterfaceManager;
 import org.polypheny.db.information.HostInformation;
 import org.polypheny.db.information.JavaInformation;
 import org.polypheny.db.processing.AuthenticatorImpl;
+import org.polypheny.db.router.RouterManager;
 import org.polypheny.db.statistic.StatisticQueryProcessor;
 import org.polypheny.db.statistic.StatisticsManager;
 import org.polypheny.db.transaction.PUID;
@@ -249,6 +250,8 @@ public class PolyphenyDb {
         final ExploreQueryProcessor exploreQueryProcessor = new ExploreQueryProcessor( transactionManager, authenticator ); // Explore-by-Example
         ExploreManager explore = ExploreManager.getInstance();
         explore.setExploreQueryProcessor( exploreQueryProcessor );
+
+        catalog.setRouter( RouterManager.getInstance().getRouter() );
 
         log.info( "****************************************************************************************************" );
         log.info( "                Polypheny-DB successfully started and ready to process your queries!" );
