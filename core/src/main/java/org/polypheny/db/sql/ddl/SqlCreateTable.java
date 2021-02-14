@@ -202,8 +202,8 @@ public class SqlCreateTable extends SqlCreate implements SqlExecutableStatement 
                 position++;
             }
             if ( catalog.getSchema( schemaId ).schemaType == SchemaType.DOCUMENT ) {
-                SqlDataTypeSpec spec = new SqlDataTypeSpec( null, new SqlIdentifier( "JSON", pos ), -1, -1, -1, -1, null, null, true, pos );
-                SqlColumnDeclaration col = new SqlColumnDeclaration( pos, new SqlIdentifier( "_hidden_", pos ), spec, null, null, ColumnStrategy.NULLABLE );
+                SqlDataTypeSpec spec = new SqlDataTypeSpec( null, new SqlIdentifier( "JSON", SqlParserPos.ZERO ), -1, -1, -1, -1, null, null, true, SqlParserPos.ZERO );
+                SqlColumnDeclaration col = new SqlColumnDeclaration( pos, new SqlIdentifier( "_hidden_", SqlParserPos.ZERO ), spec, null, null, ColumnStrategy.NULLABLE );
                 addColumn( new Ord<>( position, col ), tableId, position, catalog, stores );
             }
 

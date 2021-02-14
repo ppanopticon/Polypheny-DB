@@ -21,7 +21,13 @@ import static org.polypheny.db.util.Static.RESOURCE;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.avatica.AvaticaSeverity;
 import org.apache.calcite.avatica.Meta;
@@ -29,6 +35,7 @@ import org.apache.calcite.avatica.remote.AvaticaRuntimeException;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.commons.lang3.time.StopWatch;
 import org.polypheny.db.catalog.Catalog;
+import org.polypheny.db.catalog.Catalog.SchemaType;
 import org.polypheny.db.catalog.entity.CatalogColumn;
 import org.polypheny.db.catalog.entity.CatalogDefaultValue;
 import org.polypheny.db.catalog.entity.CatalogTable;
@@ -54,6 +61,7 @@ import org.polypheny.db.rex.RexBuilder;
 import org.polypheny.db.routing.ExecutionTimeMonitor;
 import org.polypheny.db.runtime.PolyphenyDbException;
 import org.polypheny.db.sql.SqlBasicCall;
+import org.polypheny.db.sql.SqlCharStringLiteral;
 import org.polypheny.db.sql.SqlExecutableStatement;
 import org.polypheny.db.sql.SqlExplainFormat;
 import org.polypheny.db.sql.SqlExplainLevel;
@@ -275,14 +283,24 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
     // Add default values for unset fields
     private void addDefaultValues( Transaction transaction, SqlInsert insert ) {
         SqlNodeList oldColumnList = insert.getTargetColumnList();
+
         if ( oldColumnList != null ) {
             CatalogTable catalogTable = getCatalogTable( transaction, (SqlIdentifier) insert.getTargetTable() );
+            SchemaType schemaType = Catalog.getInstance().getSchema( catalogTable.schemaId ).schemaType;
+
+            List<JsonObject> jsons = getJsonObjects( insert, oldColumnList, catalogTable );
+            int hiddenPos;
+
             SqlNodeList newColumnList = new SqlNodeList( SqlParserPos.ZERO );
             SqlNode[][] newValues = new SqlNode[((SqlBasicCall) insert.getSource()).getOperands().length][catalogTable.columnIds.size()];
             int pos = 0;
             for ( CatalogColumn column : Catalog.getInstance().getColumns( catalogTable.id ) ) {
                 // Add column
                 newColumnList.add( new SqlIdentifier( column.name, SqlParserPos.ZERO ) );
+
+                if ( column.name.equals( "_hidden_" ) ) {
+                    hiddenPos = pos; // TODO DL: not that clever, works for now
+                }
 
                 // Add value (loop because it can be a multi insert (insert into test(id) values (1),(2),(3))
                 int i = 0;
@@ -324,7 +342,12 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                                     throw new PolyphenyDbException( "Not yet supported default value type: " + defaultValue.type );
                             }
                         } else if ( column.nullable ) {
-                            newValues[i][pos] = SqlLiteral.createNull( SqlParserPos.ZERO );
+                            if ( schemaType == SchemaType.DOCUMENT && column.name.equals( "_hidden_" ) ) {
+                                newValues[i][pos] = SqlCharStringLiteral.createCharString( jsons.get( i ).toString(), SqlParserPos.ZERO );
+                            } else {
+                                newValues[i][pos] = SqlLiteral.createNull( SqlParserPos.ZERO );
+                            }
+
                         } else {
                             throw new PolyphenyDbException( "The not nullable field '" + column.name + "' is missing in the insert statement and has no default value defined." );
                         }
@@ -344,6 +367,35 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                         newValues[i] );
             }
         }
+    }
+
+
+    /**
+     * Parse the unknown columns into a JSON
+     */
+    private ArrayList<JsonObject> getJsonObjects( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable ) {
+        ArrayList<JsonObject> jsons = new ArrayList<>();
+        List<String> columnNames = catalogTable.getColumnNames();
+
+        List<Integer> docIndex = new ArrayList<>();
+        int entry = 0;
+        for ( SqlNode sqlNode : ((SqlBasicCall) insert.getSource()).getOperands() ) {
+            int pos = 0;
+            JsonObject json = new JsonObject();
+            for ( SqlNode column : oldColumnList.getList() ) {
+
+                // check if column is part of c
+                String name = ((SqlIdentifier) column).names.get( 0 );
+                if ( !(columnNames.contains( name )) ) {
+                    JsonElement val = JsonParser.parseString( ((SqlBasicCall) ((SqlBasicCall) insert.getSource()).getOperands()[entry]).getOperands()[pos].toString() );
+                    json.add( name, val );
+                }
+                pos++;
+            }
+            jsons.add( json );
+            entry++;
+        }
+        return jsons;
     }
 
 
