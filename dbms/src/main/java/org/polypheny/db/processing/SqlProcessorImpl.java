@@ -288,11 +288,9 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
             CatalogTable catalogTable = getCatalogTable( transaction, (SqlIdentifier) insert.getTargetTable() );
             SchemaType schemaType = Catalog.getInstance().getSchema( catalogTable.schemaId ).schemaType;
 
-            List<JsonObject> jsons = null;
-            Set<String> newColsNames = null;
             if ( schemaType == SchemaType.DOCUMENT ) {
-                jsons = getJsonObjects( insert, oldColumnList, catalogTable, transaction.createStatement() );
-                newColsNames = getNewColumns( insert, oldColumnList, catalogTable );
+                getJsonObjects( insert, oldColumnList, catalogTable, transaction.createStatement() );
+
             }
 
             catalogTable = getCatalogTable( transaction, (SqlIdentifier) insert.getTargetTable() );
@@ -347,12 +345,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                                     throw new PolyphenyDbException( "Not yet supported default value type: " + defaultValue.type );
                             }
                         } else if ( column.nullable ) {
-                            if ( schemaType == SchemaType.DOCUMENT && column.name.equals( "$hidden$" ) ) {
-                                newValues[i][pos] = SqlCharStringLiteral.createCharString( jsons.get( i ).toString(), SqlParserPos.ZERO );
-                            } else {
-                                newValues[i][pos] = SqlLiteral.createNull( SqlParserPos.ZERO );
-                            }
-
+                            newValues[i][pos] = SqlLiteral.createNull( SqlParserPos.ZERO );
                         } else {
                             throw new PolyphenyDbException( "The not nullable field '" + column.name + "' is missing in the insert statement and has no default value defined." );
                         }
@@ -382,30 +375,22 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
     /**
      * Parse the unknown columns into a JSON
      */
-    private ArrayList<JsonObject> getJsonObjects( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable, Statement statement ) {
-        ArrayList<JsonObject> jsons = new ArrayList<>();
+    private void getJsonObjects( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable, Statement statement ) {
         List<String> columnNames = catalogTable.getColumnNames();
         Catalog catalog = Catalog.getInstance();
 
         for ( int entry = 0; entry < ((SqlBasicCall) insert.getSource()).getOperands().length; entry++ ) {
-            int pos = 0;
             JsonObject json = new JsonObject();
             for ( SqlNode column : oldColumnList.getList() ) {
-
                 // check if column is part of c
                 String name = ((SqlIdentifier) column).names.get( 0 );
 
                 if ( !(columnNames.contains( name )) ) {
-                    //catalog.addDocumentColumn( catalogTable.id, name, statement ); // TODO DL: fix scope
+                    catalog.addDocumentColumn( catalogTable.id, name, statement ); // TODO DL: fix scope
 
-                    JsonElement val = JsonParser.parseString( ((SqlBasicCall) ((SqlBasicCall) insert.getSource()).getOperands()[entry]).getOperands()[pos].toString() );
-                    json.add( name, val );
                 }
-                pos++;
             }
-            jsons.add( json );
         }
-        return jsons;
     }
 
 
