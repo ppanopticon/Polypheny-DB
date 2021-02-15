@@ -251,7 +251,6 @@ public class PolyphenyDb {
         ExploreManager explore = ExploreManager.getInstance();
         explore.setExploreQueryProcessor( exploreQueryProcessor );
 
-        catalog.setRouter( RouterManager.getInstance().getRouter() );
 
         log.info( "****************************************************************************************************" );
         log.info( "                Polypheny-DB successfully started and ready to process your queries!" );

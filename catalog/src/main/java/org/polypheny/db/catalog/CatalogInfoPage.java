@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.polypheny.db.information.InformationGroup;
 import org.polypheny.db.information.InformationManager;
@@ -60,7 +61,7 @@ public class CatalogInfoPage implements PropertyChangeListener {
         this.databaseInformation = addCatalogInformationTable( page, "Databases", Arrays.asList( "ID", "Name", "Default SchemaID" ) );
         this.schemaInformation = addCatalogInformationTable( page, "Schemas", Arrays.asList( "ID", "Name", "DatabaseID", "SchemaType" ) );
         this.tableInformation = addCatalogInformationTable( page, "Tables", Arrays.asList( "ID", "Name", "DatabaseID", "SchemaID" ) );
-        this.columnInformation = addCatalogInformationTable( page, "Columns", Arrays.asList( "ID", "Name", "DatabaseID", "SchemaID", "TableID" ) );
+        this.columnInformation = addCatalogInformationTable( page, "Columns", Arrays.asList( "ID", "Name", "DatabaseID", "SchemaID", "TableID", "Placements" ) );
         this.indexInformation = addCatalogInformationTable( page, "Indexes", Arrays.asList( "ID", "Name", "KeyID", "Location", "Method", "Unique" ) );
 
         this.debugInformation = addCatalogInformationTable( page, "Debug", Arrays.asList( "Time", "Message" ) );
@@ -94,7 +95,8 @@ public class CatalogInfoPage implements PropertyChangeListener {
     @Override
     public void propertyChange( PropertyChangeEvent propertyChangeEvent ) {
         addDebugMessage( propertyChangeEvent );
-        resetCatalogInformation();
+        new Thread( this::resetCatalogInformation ).start();
+
     }
 
 
@@ -131,7 +133,8 @@ public class CatalogInfoPage implements PropertyChangeListener {
                 tableInformation.addRow( t.id, t.name, t.databaseId, t.schemaId );
             } );
             catalog.getColumns( null, null, null, null ).forEach( c -> {
-                columnInformation.addRow( c.id, c.name, c.databaseId, c.schemaId, c.tableId );
+                String placements = catalog.getColumnPlacements( c.id ).stream().map( plac -> String.valueOf( plac.adapterId ) ).collect( Collectors.joining( "," ) );
+                columnInformation.addRow( c.id, c.name, c.databaseId, c.schemaId, c.tableId, placements );
             } );
             catalog.getIndexes().forEach( i -> {
                 indexInformation.addRow( i.id, i.name, i.keyId, i.location, i.method, i.unique );

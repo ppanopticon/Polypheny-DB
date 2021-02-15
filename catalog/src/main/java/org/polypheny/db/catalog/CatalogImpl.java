@@ -155,7 +155,6 @@ public class CatalogImpl extends Catalog {
     private static final AtomicLong physicalPositionBuilder = new AtomicLong();
 
     private final String path;
-    private Router router;
     Comparator<CatalogColumn> columnComparator = Comparator.comparingInt( o -> o.position );
     // TODO DL check solution for all
 
@@ -250,12 +249,6 @@ public class CatalogImpl extends Catalog {
             new CatalogValidator().startCheck();
 
         }
-    }
-
-
-    @Override
-    public void setRouter( Router router ) {
-        this.router = router;
     }
 
 
@@ -1856,11 +1849,13 @@ public class CatalogImpl extends Catalog {
         if ( !documentColumns.contains( new Object[]{ tableId, name } ) ) {
 
             long id = addColumn( name, tableId, getColumns( tableId ).size(), PolyType.JSON, PolyType.JSON, 300, -1, -1, -1, true, Collation.getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() ), SchemaType.DOCUMENT );
+            CatalogTable table = getTable( tableId );
 
-
-            List<DataStore> stores = router.createTable( getTable( tableId ).schemaId, statement );
-            for ( DataStore s : stores ) {
-                addColumnPlacement( s.getAdapterId(), id, PlacementType.AUTOMATIC, null, null, null );
+            List<DataStore> stores = statement.getRouter().addColumn( table, statement );
+            for ( DataStore store : stores ) {
+                addColumnPlacement( store.getAdapterId(), id, PlacementType.AUTOMATIC, null, null, null );
+                CatalogColumn column = getColumn( id );
+                AdapterManager.getInstance().getStore( store.getAdapterId() ).addColumn( statement.getPrepareContext(), table, column );
             }
 
             synchronized ( this ) {

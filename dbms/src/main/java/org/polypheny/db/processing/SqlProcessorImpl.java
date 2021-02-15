@@ -396,7 +396,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                 String name = ((SqlIdentifier) column).names.get( 0 );
 
                 if ( !(columnNames.contains( name )) ) {
-                    catalog.addDocumentColumn( catalogTable.id, name, statement ); // TODO DL: fix scope
+                    //catalog.addDocumentColumn( catalogTable.id, name, statement ); // TODO DL: fix scope
 
                     JsonElement val = JsonParser.parseString( ((SqlBasicCall) ((SqlBasicCall) insert.getSource()).getOperands()[entry]).getOperands()[pos].toString() );
                     json.add( name, val );

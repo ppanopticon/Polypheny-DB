@@ -92,12 +92,6 @@ public abstract class Catalog {
     }
 
 
-    /**
-     * Sets the router for the Catalog //TODO DL: reevaluate
-     */
-    public abstract void setRouter( Router router );
-
-
     public abstract void commit() throws NoTablePrimaryKeyException;
 
     public abstract void rollback();

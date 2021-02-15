@@ -152,9 +152,15 @@ import org.polypheny.db.rel.RelCollations;
 import org.polypheny.db.rel.RelNode;
 import org.polypheny.db.rel.RelRoot;
 import org.polypheny.db.rel.core.Sort;
+import org.polypheny.db.rel.core.TableModify;
 import org.polypheny.db.rel.type.RelDataType;
+import org.polypheny.db.sql.SqlDataTypeSpec;
+import org.polypheny.db.sql.SqlIdentifier;
+import org.polypheny.db.sql.SqlInsert;
 import org.polypheny.db.sql.SqlKind;
 import org.polypheny.db.sql.SqlNode;
+import org.polypheny.db.sql.ddl.altertable.SqlAlterTableAddColumn;
+import org.polypheny.db.sql.parser.SqlParserPos;
 import org.polypheny.db.statistic.StatisticsManager;
 import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.transaction.Transaction;
@@ -163,6 +169,7 @@ import org.polypheny.db.transaction.TransactionException;
 import org.polypheny.db.transaction.TransactionManager;
 import org.polypheny.db.type.PolyType;
 import org.polypheny.db.type.PolyTypeFamily;
+import org.polypheny.db.type.PolyTypeUtil;
 import org.polypheny.db.util.DateTimeStringUtils;
 import org.polypheny.db.util.FileSystemManager;
 import org.polypheny.db.util.ImmutableIntList;
@@ -769,11 +776,11 @@ public class Crud implements InformationObserver {
                 }
             } else if ( Pattern.matches( "(mql[!].*[!])", query ) ) {
                 temp = System.nanoTime();
-                PolyphenyDbSignature<?> signature = processMqlQuery( StringUtils.substringBetween(query, "mql!", "!") ); //TODO DL: replace with "mql(" and ")" regex
+                PolyphenyDbSignature<?> signature = processMqlQuery( StringUtils.substringBetween( query, "mql!", "!" ) ); //TODO DL: replace with "mql(" and ")" regex
                 DbColumn[] header = new DbColumn[1];
                 header[0] = new DbColumn( signature.sql );
                 String[][] multiples = new String[1][1];
-                multiples[0][0] = signature.columns.stream().map( c -> c.columnName ).collect( Collectors.joining(","));
+                multiples[0][0] = signature.columns.stream().map( c -> c.columnName ).collect( Collectors.joining( "," ) );
                 result = new Result( header, multiples ).setGeneratedQuery( query );
                 results.add( result );
 
@@ -3267,6 +3274,29 @@ public class Crud implements InformationObserver {
 
         SqlNode parsed = sqlProcessor.parse( sql );
 
+        if ( parsed instanceof SqlInsert ) {
+            SqlInsert insert = (SqlInsert) parsed;
+            List<String> names = ((SqlIdentifier) insert.getTargetTable()).names;
+            try {
+                if ( catalog.getSchema( "APP", names.get( 0 ) ).schemaType == SchemaType.DOCUMENT ) {
+                    CatalogTable table = catalog.getTable( "APP", names.get( 0 ), names.get( 1 ) );
+                    List<String> targetColumns = ((SqlInsert) parsed).getTargetColumnList().getList().stream().map( node -> ((SqlIdentifier) node).names.get( 0 ) ).collect( Collectors.toList() );
+                    List<String> intersection = targetColumns.stream().filter( c -> !table.getColumnNames().contains( c ) ).collect( Collectors.toList() );
+                    if ( !intersection.isEmpty() ) {
+                        for ( String column : intersection ) {
+                            SqlAlterTableAddColumn alter =
+                                    new SqlAlterTableAddColumn(
+                                            SqlParserPos.ZERO, new SqlIdentifier( names, SqlParserPos.ZERO ), new SqlIdentifier( column, SqlParserPos.ZERO ), new SqlDataTypeSpec( new SqlIdentifier( "JSON", SqlParserPos.ZERO ), -1, -1, null, null, SqlParserPos.ZERO ), true, null, null, null );
+                            sqlProcessor.prepareDdl( statement, alter );
+                        }
+                    }
+                }
+            } catch ( UnknownSchemaException | UnknownDatabaseException | UnknownTableException e ) {
+                e.printStackTrace();
+            }
+        }
+        parsed = sqlProcessor.parse( sql );
+
         if ( parsed.isA( SqlKind.DDL ) ) {
             signature = sqlProcessor.prepareDdl( statement, parsed );
         } else {
@@ -3301,7 +3331,6 @@ public class Crud implements InformationObserver {
         // signature = mqlProcessor.prepareDdl( statement, parsed );
         // Prepare
         signature = statement.getQueryProcessor().prepareQuery( logicalRoot );
-
 
         return signature;
     }
