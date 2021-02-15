@@ -3274,29 +3274,6 @@ public class Crud implements InformationObserver {
 
         SqlNode parsed = sqlProcessor.parse( sql );
 
-        if ( parsed instanceof SqlInsert ) {
-            SqlInsert insert = (SqlInsert) parsed;
-            List<String> names = ((SqlIdentifier) insert.getTargetTable()).names;
-            try {
-                if ( catalog.getSchema( "APP", names.get( 0 ) ).schemaType == SchemaType.DOCUMENT ) {
-                    CatalogTable table = catalog.getTable( "APP", names.get( 0 ), names.get( 1 ) );
-                    List<String> targetColumns = ((SqlInsert) parsed).getTargetColumnList().getList().stream().map( node -> ((SqlIdentifier) node).names.get( 0 ) ).collect( Collectors.toList() );
-                    List<String> intersection = targetColumns.stream().filter( c -> !table.getColumnNames().contains( c ) ).collect( Collectors.toList() );
-                    if ( !intersection.isEmpty() ) {
-                        for ( String column : intersection ) {
-                            SqlAlterTableAddColumn alter =
-                                    new SqlAlterTableAddColumn(
-                                            SqlParserPos.ZERO, new SqlIdentifier( names, SqlParserPos.ZERO ), new SqlIdentifier( column, SqlParserPos.ZERO ), new SqlDataTypeSpec( new SqlIdentifier( "JSON", SqlParserPos.ZERO ), -1, -1, null, null, SqlParserPos.ZERO ), true, null, null, null );
-                            sqlProcessor.prepareDdl( statement, alter );
-                        }
-                    }
-                }
-            } catch ( UnknownSchemaException | UnknownDatabaseException | UnknownTableException e ) {
-                e.printStackTrace();
-            }
-        }
-        parsed = sqlProcessor.parse( sql );
-
         if ( parsed.isA( SqlKind.DDL ) ) {
             signature = sqlProcessor.prepareDdl( statement, parsed );
         } else {

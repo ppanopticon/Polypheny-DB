@@ -22,6 +22,7 @@ import com.google.common.collect.ImmutableMap;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableSet;
 import java.util.Objects;
+import java.util.SortedSet;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -40,6 +42,7 @@ import org.mapdb.DB;
 import org.mapdb.DBException.SerializationError;
 import org.mapdb.DBMaker;
 import org.mapdb.HTreeMap;
+import org.mapdb.HTreeMap.KeySet;
 import org.mapdb.Serializer;
 import org.mapdb.serializer.SerializerArrayTuple;
 import org.polypheny.db.adapter.Adapter;
@@ -118,7 +121,7 @@ public class CatalogImpl extends Catalog {
     private static BTreeMap<Object[], CatalogColumn> columnNames;
     private static BTreeMap<Object[], CatalogColumnPlacement> columnPlacements;
 
-    private static NavigableSet<Object[]> documentColumns;
+    private static KeySet<Object[]> documentColumns;
 
     private static HTreeMap<Integer, CatalogAdapter> adapters;
     private static HTreeMap<String, CatalogAdapter> adapterNames;
@@ -491,7 +494,7 @@ public class CatalogImpl extends Catalog {
         //noinspection unchecked
         columnPlacements = db.treeMap( "columnPlacement", new SerializerArrayTuple( Serializer.INTEGER, Serializer.LONG ), Serializer.JAVA ).createOrOpen();
 
-        documentColumns = db.treeSet( "documentColumns", new SerializerArrayTuple( Serializer.LONG, Serializer.STRING ) ).createOrOpen();
+        documentColumns = db.hashSet( "documentColumns", new SerializerArrayTuple( Serializer.LONG, Serializer.STRING ) ).createOrOpen();
     }
 
 
@@ -1307,6 +1310,10 @@ public class CatalogImpl extends Catalog {
                 deleteColumn( columnId );
             }
 
+            if ( getSchema( table.schemaId ).schemaType == SchemaType.DOCUMENT ) {
+                deleteDocumentColumns( tableId );
+            }
+
             tableChildren.remove( tableId );
             tables.remove( tableId );
             tableNames.remove( new Object[]{ table.databaseId, table.schemaId, table.name } );
@@ -1864,6 +1871,19 @@ public class CatalogImpl extends Catalog {
         }
 
         listeners.firePropertyChange( "documentColumn", null, tableId + " " + name );
+    }
+
+
+    /**
+     *
+     * @param tableId the target table id
+     */
+    @Override
+    public void deleteDocumentColumns( long tableId ) {
+
+        List<Object[]> columns = documentColumns.stream().filter(column -> (Long) column[0] == tableId ).collect( Collectors.toList() );
+
+        columns.forEach( documentColumns::remove );
     }
 
 

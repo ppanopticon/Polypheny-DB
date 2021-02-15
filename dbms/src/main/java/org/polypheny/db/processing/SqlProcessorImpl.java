@@ -290,7 +290,6 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
 
             if ( schemaType == SchemaType.DOCUMENT ) {
                 getJsonObjects( insert, oldColumnList, catalogTable, transaction.createStatement() );
-
             }
 
             catalogTable = getCatalogTable( transaction, (SqlIdentifier) insert.getTargetTable() );
@@ -380,7 +379,6 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
         Catalog catalog = Catalog.getInstance();
 
         for ( int entry = 0; entry < ((SqlBasicCall) insert.getSource()).getOperands().length; entry++ ) {
-            JsonObject json = new JsonObject();
             for ( SqlNode column : oldColumnList.getList() ) {
                 // check if column is part of c
                 String name = ((SqlIdentifier) column).names.get( 0 );

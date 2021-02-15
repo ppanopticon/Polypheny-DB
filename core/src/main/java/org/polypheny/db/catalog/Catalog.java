@@ -587,6 +587,12 @@ public abstract class Catalog {
     public abstract void addDocumentColumn( long tableId, String name, Statement statement );
 
     /**
+     * Deletes every DocumentColumn of a table
+     * @param tableId the target table id
+     */
+    public abstract void deleteDocumentColumns( long tableId );
+
+    /**
      * Renames a column
      *
      * @param columnId The if of the column to rename
