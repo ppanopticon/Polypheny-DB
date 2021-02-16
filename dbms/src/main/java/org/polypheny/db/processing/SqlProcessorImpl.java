@@ -291,7 +291,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
             SchemaType schemaType = Catalog.getInstance().getSchema( catalogTable.schemaId ).schemaType;
 
             if ( schemaType == SchemaType.DOCUMENT ) {
-                getJsonObjects( insert, oldColumnList, catalogTable, transaction.createStatement() );
+                getMissingColumns( insert, oldColumnList, catalogTable, transaction.createStatement() );
                 return;
             }
 
@@ -375,9 +375,9 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
 
 
     /**
-     * Parse the unknown columns into a JSON
+     * Add
      */
-    private void getJsonObjects( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable, Statement statement ) {
+    private void getMissingColumns( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable, Statement statement ) {
         List<String> columnNames = catalogTable.getColumnNames();
         Catalog catalog = Catalog.getInstance();
 
@@ -387,8 +387,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                 String name = ((SqlIdentifier) column).names.get( 0 );
 
                 if ( !(columnNames.contains( name )) ) {
-                    catalog.addDocumentColumn( catalogTable.id, name, statement ); // TODO DL: fix scope
-
+                    catalog.addDocumentColumn( catalogTable.id, name, statement );
                 }
             }
         }

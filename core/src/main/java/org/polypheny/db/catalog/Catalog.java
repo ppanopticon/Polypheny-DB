@@ -59,7 +59,11 @@ import org.polypheny.db.catalog.exceptions.UnknownSchemaTypeException;
 import org.polypheny.db.catalog.exceptions.UnknownTableException;
 import org.polypheny.db.catalog.exceptions.UnknownTableTypeException;
 import org.polypheny.db.catalog.exceptions.UnknownUserException;
+import org.polypheny.db.config.ConfigManager;
+import org.polypheny.db.config.RuntimeConfig;
 import org.polypheny.db.routing.Router;
+import org.polypheny.db.runtime.Resources.Default;
+import org.polypheny.db.transaction.PUID;
 import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.transaction.Transaction;
 import org.polypheny.db.type.PolyType;
@@ -588,6 +592,7 @@ public abstract class Catalog {
 
     /**
      * Deletes every DocumentColumn of a table
+     *
      * @param tableId the target table id
      */
     public abstract void deleteDocumentColumns( long tableId );
@@ -1030,6 +1035,7 @@ public abstract class Catalog {
         RELATIONAL( 1 ),
         @SerializedName("document")
         DOCUMENT( 2 );
+
         // GRAPH, DOCUMENT, ...
 
         private final int id;
@@ -1042,6 +1048,11 @@ public abstract class Catalog {
 
         public int getId() {
             return id;
+        }
+
+
+        public static SchemaType getDefault() {
+            return (SchemaType) ConfigManager.getInstance().getConfig( "runtime/defaultSchemaModel" ).getEnum();
         }
 
 

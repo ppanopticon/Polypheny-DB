@@ -122,7 +122,7 @@ public abstract class AbstractPolyphenyDbSchema implements PolyphenyDbSchema {
      */
     public static PolyphenyDbSchema createRootSchema( String name ) {
         final Schema schema = new RootSchema();
-        return new SimplePolyphenyDbSchema( null, schema, name, SchemaType.RELATIONAL );
+        return new SimplePolyphenyDbSchema( null, schema, name, SchemaType.getDefault() );
     }
 
 

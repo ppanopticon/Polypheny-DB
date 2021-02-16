@@ -4039,20 +4039,11 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
                             id,
                             catalogReader,
                             relOptTable );
-            List<String> names = table.getQualifiedName();
-            SchemaType schemaType = SchemaType.RELATIONAL;
-            try {
-                schemaType = Catalog.getInstance().getSchema( "APP", names.get( 0 ) ).getSchemaType();
-            } catch ( UnknownSchemaException | UnknownDatabaseException e ) {
-                e.printStackTrace();
-            }
 
             if ( targetField == null ) {
-                if ( schemaType == SchemaType.DOCUMENT ) {
-                    targetField = new RelDataTypeFieldImpl( id.names.get( 0 ), 1, new BasicPolyType( RelDataTypeSystem.DEFAULT, PolyType.JSON ) );
-                } else {
-                    throw newValidationError( id, RESOURCE.unknownTargetColumn( id.toString() ) );
-                }
+
+                throw newValidationError( id, RESOURCE.unknownTargetColumn( id.toString() ) );
+
             }
             if ( !assignedFields.add( targetField.getIndex() ) ) {
                 throw newValidationError( id, RESOURCE.duplicateTargetColumn( targetField.getName() ) );

@@ -3117,10 +3117,6 @@ public class SqlToRelConverter {
                                 id,
                                 catalogReader,
                                 targetTable );
-
-                if ( field == null && schemaType == SchemaType.DOCUMENT ) {
-                    field = new RelDataTypeFieldImpl( id.names.get( 0 ), 1, new BasicPolyType( RelDataTypeSystem.DEFAULT, PolyType.JSON ) );
-                }
                 assert field != null : "column " + id.toString() + " not found";
 
                 targetColumnNames.add( field.getName() );

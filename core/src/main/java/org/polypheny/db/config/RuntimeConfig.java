@@ -18,6 +18,7 @@ package org.polypheny.db.config;
 
 
 import java.math.BigDecimal;
+import org.polypheny.db.catalog.Catalog.SchemaType;
 import org.polypheny.db.config.Config.ConfigListener;
 import org.polypheny.db.util.background.BackgroundTask;
 
@@ -297,7 +298,12 @@ public enum RuntimeConfig {
             "Enable query simplification using polystore level indexes.",
             false,
             ConfigType.BOOLEAN,
-            "polystoreIndexGroup" );
+            "polystoreIndexGroup" ),
+
+    DEFAULT_SCHEMA_MODEL( "runtime/defaultSchemaModel",
+            "Define default schema model, which is used when none is provided.",
+            SchemaType.RELATIONAL,
+            ConfigType.ENUM );
 
 
     private final String key;

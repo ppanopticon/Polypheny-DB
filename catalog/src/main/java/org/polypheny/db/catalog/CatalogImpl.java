@@ -581,7 +581,7 @@ public class CatalogImpl extends Catalog {
 
         long schemaId;
         if ( !schemaNames.containsKey( new Object[]{ databaseId, "public" } ) ) {
-            schemaId = addSchema( "public", databaseId, 1, SchemaType.RELATIONAL );
+            schemaId = addSchema( "public", databaseId, 1, SchemaType.getDefault() );
         } else {
             schemaId = getSchema( "APP", "public" ).id;
         }
@@ -1853,7 +1853,7 @@ public class CatalogImpl extends Catalog {
     @Override
     public void addDocumentColumn( long tableId, String name, Statement statement ) {
 
-        /*
+
 
         if ( !documentColumns.contains( new Object[]{ tableId, name } ) ) {
 
@@ -1870,7 +1870,7 @@ public class CatalogImpl extends Catalog {
             synchronized ( this ) {
                 documentColumns.add( new Object[]{ tableId, name } );
             }
-        }*/
+        }
 
         listeners.firePropertyChange( "documentColumn", null, tableId + " " + name );
     }
