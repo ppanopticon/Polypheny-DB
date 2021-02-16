@@ -45,6 +45,10 @@ import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.function.Predicate;
+import org.polypheny.db.catalog.Catalog;
+import org.polypheny.db.catalog.Catalog.SchemaType;
+import org.polypheny.db.catalog.exceptions.UnknownDatabaseException;
+import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.config.RuntimeConfig;
 import org.polypheny.db.jdbc.JavaTypeFactoryImpl;
 import org.polypheny.db.plan.RelOptPlanner;
@@ -116,6 +120,7 @@ public class PolyphenyDbCatalogReader implements Prepare.CatalogReader {
                         ? schemaPaths
                         : new LinkedHashSet<>( schemaPaths ) );
         this.typeFactory = typeFactory;
+
     }
 
 

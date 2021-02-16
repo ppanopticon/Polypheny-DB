@@ -17,6 +17,7 @@
 package org.polypheny.db.processing;
 
 
+import org.polypheny.db.catalog.Catalog.SchemaType;
 import org.polypheny.db.jdbc.PolyphenyDbSignature;
 import org.polypheny.db.rel.RelRoot;
 import org.polypheny.db.rel.type.RelDataType;
@@ -33,6 +34,7 @@ public interface SqlProcessor {
     Pair<SqlNode, RelDataType> validate( Transaction transaction, SqlNode parsed, boolean addDefaultValues );
 
     RelRoot translate( Statement statement, SqlNode sql );
+
 
     PolyphenyDbSignature<?> prepareDdl( Statement statement, SqlNode parsed );
 

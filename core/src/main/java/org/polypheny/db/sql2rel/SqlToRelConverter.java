@@ -34,6 +34,8 @@
 package org.polypheny.db.sql2rel;
 
 
+import static org.polypheny.db.util.Static.RESOURCE;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
@@ -62,6 +64,10 @@ import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 import org.apache.calcite.avatica.util.Spaces;
 import org.apache.calcite.linq4j.Ord;
+import org.polypheny.db.catalog.Catalog;
+import org.polypheny.db.catalog.Catalog.SchemaType;
+import org.polypheny.db.catalog.exceptions.UnknownDatabaseException;
+import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.plan.Convention;
 import org.polypheny.db.plan.RelOptCluster;
 import org.polypheny.db.plan.RelOptSamplingParameters;
@@ -116,6 +122,8 @@ import org.polypheny.db.rel.stream.LogicalDelta;
 import org.polypheny.db.rel.type.RelDataType;
 import org.polypheny.db.rel.type.RelDataTypeFactory;
 import org.polypheny.db.rel.type.RelDataTypeField;
+import org.polypheny.db.rel.type.RelDataTypeFieldImpl;
+import org.polypheny.db.rel.type.RelDataTypeSystem;
 import org.polypheny.db.rex.RexBuilder;
 import org.polypheny.db.rex.RexCall;
 import org.polypheny.db.rex.RexCallBinding;
@@ -205,6 +213,7 @@ import org.polypheny.db.sql.validate.SqlValidatorTable;
 import org.polypheny.db.sql.validate.SqlValidatorUtil;
 import org.polypheny.db.tools.RelBuilder;
 import org.polypheny.db.tools.RelBuilderFactory;
+import org.polypheny.db.type.BasicPolyType;
 import org.polypheny.db.type.PolyType;
 import org.polypheny.db.type.PolyTypeUtil;
 import org.polypheny.db.type.inference.PolyReturnTypeInference;
@@ -3021,12 +3030,16 @@ public class SqlToRelConverter {
         final List<String> targetFields = targetTable.getRowType().getFieldNames();
         for ( String targetColumnName : targetColumnNames ) {
             final int i = targetFields.indexOf( targetColumnName );
-            switch ( strategies.get( i ) ) {
-                case STORED:
-                case VIRTUAL:
-                    break;
-                default:
-                    nameToNodeMap.put( targetColumnName, rexBuilder.makeFieldAccess( sourceRef, j++ ) );
+            if ( i != -1 ){ // TODO DL: change
+                switch ( strategies.get( i ) ) {
+                    case STORED:
+                    case VIRTUAL:
+                        break;
+                    default:
+                        nameToNodeMap.put( targetColumnName, rexBuilder.makeFieldAccess( sourceRef, j++ ) );
+                }
+            } else {
+                nameToNodeMap.put( targetColumnName, rexBuilder.makeFieldAccess( sourceRef, j++ ) );
             }
         }
         return createBlackboard( null, nameToNodeMap, false );
@@ -3085,6 +3098,16 @@ public class SqlToRelConverter {
                 targetColumnNames.addAll( tableRowType.getFieldNames() );
             }
         } else {
+
+            List<String> names = targetTable.getQualifiedName();
+            SchemaType schemaType = SchemaType.RELATIONAL;
+            try {
+                schemaType = Catalog.getInstance().getSchema( "APP", names.get( 0 ) ).getSchemaType();
+            } catch ( UnknownSchemaException | UnknownDatabaseException e ) {
+                e.printStackTrace();
+            }
+
+
             for ( int i = 0; i < targetColumnList.size(); i++ ) {
                 SqlIdentifier id = (SqlIdentifier) targetColumnList.get( i );
                 RelDataTypeField field =
@@ -3094,7 +3117,12 @@ public class SqlToRelConverter {
                                 id,
                                 catalogReader,
                                 targetTable );
+
+                if ( field == null && schemaType == SchemaType.DOCUMENT ) {
+                    field = new RelDataTypeFieldImpl( id.names.get( 0 ), 1, new BasicPolyType( RelDataTypeSystem.DEFAULT, PolyType.JSON ) );
+                }
                 assert field != null : "column " + id.toString() + " not found";
+
                 targetColumnNames.add( field.getName() );
             }
         }
@@ -3106,16 +3134,20 @@ public class SqlToRelConverter {
         for ( String columnName : targetColumnNames ) {
             final int i = tableRowType.getFieldNames().indexOf( columnName );
             final RexNode expr;
-            switch ( strategies.get( i ) ) {
-                case STORED:
-                    final InitializerExpressionFactory f = Util.first( targetTable.unwrap( InitializerExpressionFactory.class ), NullInitializerExpressionFactory.INSTANCE );
-                    expr = f.newColumnDefaultValue( targetTable, i, bb );
-                    break;
-                case VIRTUAL:
-                    expr = null;
-                    break;
-                default:
-                    expr = bb.nameToNodeMap.get( columnName );
+            if( i != -1 ) {
+                switch ( strategies.get( i ) ) {
+                    case STORED:
+                        final InitializerExpressionFactory f = Util.first( targetTable.unwrap( InitializerExpressionFactory.class ), NullInitializerExpressionFactory.INSTANCE );
+                        expr = f.newColumnDefaultValue( targetTable, i, bb );
+                        break;
+                    case VIRTUAL:
+                        expr = null;
+                        break;
+                    default:
+                        expr = bb.nameToNodeMap.get( columnName );
+                }
+            }else {
+                expr = bb.nameToNodeMap.get( columnName );
             }
             columnExprs.add( expr );
         }
@@ -4318,6 +4350,7 @@ public class SqlToRelConverter {
         public String getOriginalRelName() {
             return originalRelName;
         }
+
     }
 
 
@@ -4336,6 +4369,7 @@ public class SqlToRelConverter {
         public RexNode convertSubQuery( SqlCall subQuery, SqlToRelConverter parentConverter, boolean isExists, boolean isExplain ) {
             throw new IllegalArgumentException();
         }
+
     }
 
 
@@ -4741,6 +4775,7 @@ public class SqlToRelConverter {
         public RelDataTypeFactory getTypeFactory() {
             return typeFactory;
         }
+
     }
 
 
@@ -4775,6 +4810,7 @@ public class SqlToRelConverter {
         Pair<RelNode, Integer> findRel( int offset ) {
             return relOffsetList.get( offset );
         }
+
     }
 
 
@@ -4952,6 +4988,7 @@ public class SqlToRelConverter {
                 return type;
             }
         }
+
     }
 
 
@@ -4969,6 +5006,7 @@ public class SqlToRelConverter {
             this.node = node;
             this.logic = logic;
         }
+
     }
 
 
@@ -5019,6 +5057,7 @@ public class SqlToRelConverter {
 
             return call.getOperator().acceptCall( this, call );
         }
+
     }
 
 
@@ -5040,6 +5079,7 @@ public class SqlToRelConverter {
             this.requiredColumns = requiredColumns;
             this.r = r;
         }
+
     }
 
 
@@ -5108,6 +5148,7 @@ public class SqlToRelConverter {
          * Returns the factory to create {@link RelBuilder}, never null. Default is {@link RelFactories#LOGICAL_BUILDER}.
          */
         RelBuilderFactory getRelBuilderFactory();
+
     }
 
 
@@ -5200,6 +5241,7 @@ public class SqlToRelConverter {
         public Config build() {
             return new ConfigImpl( convertTableAccess, decorrelationEnabled, trimUnusedFields, createValuesRel, explain, expand, inSubQueryThreshold, relBuilderFactory );
         }
+
     }
 
 
@@ -5277,6 +5319,8 @@ public class SqlToRelConverter {
         public RelBuilderFactory getRelBuilderFactory() {
             return relBuilderFactory;
         }
+
     }
+
 }
 

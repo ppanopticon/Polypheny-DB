@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.avatica.AvaticaSeverity;
 import org.apache.calcite.avatica.Meta;
@@ -97,6 +98,7 @@ import org.polypheny.db.util.SourceStringReader;
 public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
 
     private static final SqlParserConfig parserConfig;
+    @Setter
     private PolyphenyDbSqlValidator validator;
 
 
@@ -290,6 +292,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
 
             if ( schemaType == SchemaType.DOCUMENT ) {
                 getJsonObjects( insert, oldColumnList, catalogTable, transaction.createStatement() );
+                return;
             }
 
             catalogTable = getCatalogTable( transaction, (SqlIdentifier) insert.getTargetTable() );

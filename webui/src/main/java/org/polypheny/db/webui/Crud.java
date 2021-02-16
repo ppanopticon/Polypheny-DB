@@ -3274,11 +3274,31 @@ public class Crud implements InformationObserver {
 
         SqlNode parsed = sqlProcessor.parse( sql );
 
+        SchemaType type = SchemaType.RELATIONAL;
+
+        if ( parsed instanceof SqlInsert ) {
+            SqlInsert insert = (SqlInsert) parsed;
+            List<String> names = ((SqlIdentifier) insert.getTargetTable()).names;
+            try {
+                type = catalog.getSchema( "APP", names.get( 0 ) ).schemaType;
+            } catch ( UnknownSchemaException | UnknownDatabaseException e ) {
+                e.printStackTrace();
+            }
+        }
+
         if ( parsed.isA( SqlKind.DDL ) ) {
             signature = sqlProcessor.prepareDdl( statement, parsed );
         } else {
-            Pair<SqlNode, RelDataType> validated = sqlProcessor.validate( statement.getTransaction(), parsed, RuntimeConfig.ADD_DEFAULT_VALUES_IN_INSERTS.getBoolean() );
-            RelRoot logicalRoot = sqlProcessor.translate( statement, validated.left );
+            RelRoot logicalRoot;
+            Pair<SqlNode, RelDataType> validated = null;
+            if ( type == SchemaType.RELATIONAL ) {
+                validated = sqlProcessor.validate( statement.getTransaction(), parsed, RuntimeConfig.ADD_DEFAULT_VALUES_IN_INSERTS.getBoolean() );
+                logicalRoot = sqlProcessor.translate( statement, validated.left );
+            } else {
+                validated = sqlProcessor.validate( statement.getTransaction(), parsed, false );
+                logicalRoot = sqlProcessor.translate( statement, validated.left );
+            }
+
 
             // Prepare
             signature = statement.getQueryProcessor().prepareQuery( logicalRoot );

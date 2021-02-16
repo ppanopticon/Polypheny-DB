@@ -67,6 +67,10 @@ import javax.annotation.Nonnull;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.linq4j.function.Function2;
 import org.apache.calcite.linq4j.function.Functions;
+import org.polypheny.db.catalog.Catalog;
+import org.polypheny.db.catalog.Catalog.SchemaType;
+import org.polypheny.db.catalog.exceptions.UnknownDatabaseException;
+import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.plan.RelOptTable;
 import org.polypheny.db.plan.RelOptUtil;
 import org.polypheny.db.prepare.Prepare;
@@ -74,6 +78,7 @@ import org.polypheny.db.rel.type.DynamicRecordType;
 import org.polypheny.db.rel.type.RelDataType;
 import org.polypheny.db.rel.type.RelDataTypeFactory;
 import org.polypheny.db.rel.type.RelDataTypeField;
+import org.polypheny.db.rel.type.RelDataTypeFieldImpl;
 import org.polypheny.db.rel.type.RelDataTypeSystem;
 import org.polypheny.db.rel.type.RelRecordType;
 import org.polypheny.db.rex.RexBuilder;
@@ -86,6 +91,7 @@ import org.polypheny.db.runtime.PolyphenyDbException;
 import org.polypheny.db.runtime.Resources;
 import org.polypheny.db.schema.ColumnStrategy;
 import org.polypheny.db.schema.PolyphenyDbSchema;
+import org.polypheny.db.schema.Schema;
 import org.polypheny.db.schema.Table;
 import org.polypheny.db.schema.impl.ModifiableViewTable;
 import org.polypheny.db.sql.JoinConditionType;
@@ -135,6 +141,7 @@ import org.polypheny.db.sql.util.SqlShuttle;
 import org.polypheny.db.sql.util.SqlVisitor;
 import org.polypheny.db.sql2rel.InitializerContext;
 import org.polypheny.db.type.ArrayType;
+import org.polypheny.db.type.BasicPolyType;
 import org.polypheny.db.type.PolyType;
 import org.polypheny.db.type.PolyTypeUtil;
 import org.polypheny.db.type.checker.AssignableOperandTypeChecker;
@@ -4032,8 +4039,20 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
                             id,
                             catalogReader,
                             relOptTable );
+            List<String> names = table.getQualifiedName();
+            SchemaType schemaType = SchemaType.RELATIONAL;
+            try {
+                schemaType = Catalog.getInstance().getSchema( "APP", names.get( 0 ) ).getSchemaType();
+            } catch ( UnknownSchemaException | UnknownDatabaseException e ) {
+                e.printStackTrace();
+            }
+
             if ( targetField == null ) {
-                throw newValidationError( id, RESOURCE.unknownTargetColumn( id.toString() ) );
+                if ( schemaType == SchemaType.DOCUMENT ) {
+                    targetField = new RelDataTypeFieldImpl( id.names.get( 0 ), 1, new BasicPolyType( RelDataTypeSystem.DEFAULT, PolyType.JSON ) );
+                } else {
+                    throw newValidationError( id, RESOURCE.unknownTargetColumn( id.toString() ) );
+                }
             }
             if ( !assignedFields.add( targetField.getIndex() ) ) {
                 throw newValidationError( id, RESOURCE.duplicateTargetColumn( targetField.getName() ) );
@@ -4283,17 +4302,17 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
             RelDataType sourceType = sourceFields.get( i ).getType();
             RelDataType targetType = targetFields.get( i ).getType();
 
-            if( targetType instanceof ArrayType ) {
-                if( sourceType instanceof ArrayType ) {
+            if ( targetType instanceof ArrayType ) {
+                if ( sourceType instanceof ArrayType ) {
                     long targetDimension = ((ArrayType) targetType).getDimension();
                     long sourceDimension = ((ArrayType) sourceType).getMaxDimension();
-                    if(sourceDimension > targetDimension && targetDimension > -1 ) {
-                        throw newValidationError( query, RESOURCE.exceededDimension( targetFields.get( i ).getKey(), sourceDimension, targetDimension ));
+                    if ( sourceDimension > targetDimension && targetDimension > -1 ) {
+                        throw newValidationError( query, RESOURCE.exceededDimension( targetFields.get( i ).getKey(), sourceDimension, targetDimension ) );
                     }
 
                     long targetCardinality = ((ArrayType) targetType).getCardinality();
                     long sourceCardinality = ((ArrayType) sourceType).getMaxCardinality();
-                    if(sourceCardinality > targetCardinality && targetCardinality > -1 ) {
+                    if ( sourceCardinality > targetCardinality && targetCardinality > -1 ) {
                         throw newValidationError( query, RESOURCE.exceededCardinality( targetFields.get( i ).getKey(), sourceCardinality, targetCardinality ) );
                     }
                 }
@@ -4581,6 +4600,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public PolyphenyDbContextException get() {
             return newValidationError( sqlNode, validatorException );
         }
+
     }
 
 
@@ -4594,6 +4614,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public PolyphenyDbContextException apply( SqlNode v0, Resources.ExInst<SqlValidatorException> v1 ) {
             return newValidationError( v0, v1 );
         }
+
     }
 
 
@@ -5224,6 +5245,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         protected DmlNamespace( SqlValidatorImpl validator, SqlNode id, SqlNode enclosingNode, SqlValidatorScope parentScope ) {
             super( validator, id, enclosingNode, parentScope );
         }
+
     }
 
 
@@ -5245,6 +5267,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public SqlInsert getNode() {
             return node;
         }
+
     }
 
 
@@ -5266,6 +5289,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public SqlUpdate getNode() {
             return node;
         }
+
     }
 
 
@@ -5287,6 +5311,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public SqlDelete getNode() {
             return node;
         }
+
     }
 
 
@@ -5308,6 +5333,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public SqlMerge getNode() {
             return node;
         }
+
     }
 
 
@@ -5369,6 +5395,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public Void visit( SqlIntervalQualifier intervalQualifier ) {
             throw Util.needToImplement( intervalQualifier );
         }
+
     }
 
 
@@ -5497,6 +5524,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public RelDataType visit( SqlIntervalQualifier intervalQualifier ) {
             return typeFactory.createSqlIntervalType( intervalQualifier );
         }
+
     }
 
 
@@ -5556,6 +5584,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
             }
             return fqId;
         }
+
     }
 
 
@@ -5657,6 +5686,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
             }
             return super.visitScoped( call );
         }
+
     }
 
 
@@ -5756,6 +5786,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
 
             return super.visit( literal );
         }
+
     }
 
 
@@ -5772,6 +5803,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
             this.scope = scope;
             this.id = id;
         }
+
     }
 
 
@@ -5795,6 +5827,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
             cursorPosToSelectMap = new HashMap<>();
             columnListParamToParentCursorMap = new HashMap<>();
         }
+
     }
 
 
@@ -5806,6 +5839,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public SqlNode go( SqlNode node ) {
             return node.accept( this );
         }
+
     }
 
 
@@ -5897,6 +5931,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
                 return op.createCall( SqlParserPos.ZERO, id, offset );
             }
         }
+
     }
 
 
@@ -5951,6 +5986,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
                     id,
                     SqlLiteral.createExactNumeric( "0", SqlParserPos.ZERO ) );
         }
+
     }
 
 
@@ -6086,6 +6122,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         public Set<String> visit( SqlDynamicParam param ) {
             return ImmutableSet.of();
         }
+
     }
 
 
@@ -6224,6 +6261,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
                 selectItems.add( selectItem );
             }
         }
+
     }
 
 

@@ -1853,6 +1853,8 @@ public class CatalogImpl extends Catalog {
     @Override
     public void addDocumentColumn( long tableId, String name, Statement statement ) {
 
+        /*
+
         if ( !documentColumns.contains( new Object[]{ tableId, name } ) ) {
 
             long id = addColumn( name, tableId, getColumns( tableId ).size(), PolyType.JSON, PolyType.JSON, 300, -1, -1, -1, true, Collation.getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() ), SchemaType.DOCUMENT );
@@ -1868,7 +1870,7 @@ public class CatalogImpl extends Catalog {
             synchronized ( this ) {
                 documentColumns.add( new Object[]{ tableId, name } );
             }
-        }
+        }*/
 
         listeners.firePropertyChange( "documentColumn", null, tableId + " " + name );
     }
