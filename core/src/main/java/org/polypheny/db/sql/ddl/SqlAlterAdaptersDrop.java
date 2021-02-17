@@ -86,7 +86,14 @@ public class SqlAlterAdaptersDrop extends SqlAlter {
 
     @Override
     public void execute( Context context, Statement statement ) {
-        DdlManager.getInstance().dropAdapter( uniqueName.toString(), statement.getRouter(), statement.getQueryProcessor(), uniqueName.getParserPosition() );
+        try {
+            DdlManager.getInstance().dropAdapter( uniqueName.toString(), statement.getRouter(), statement.getQueryProcessor() );
+        } catch ( UnknownAdapterException e ) {
+            throw SqlUtil.newContextException( uniqueName.getParserPosition(), RESOURCE.unknownAdapter( e.getAdapterName() ) );
+        } catch ( Exception e ) {
+            throw new RuntimeException( "Could not remove data source from the adapter with the unique name '" + uniqueName.toString() + "'!", e );
+        }
+
     }
 
 }

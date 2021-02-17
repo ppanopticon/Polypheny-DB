@@ -39,6 +39,7 @@ import static org.polypheny.db.util.Static.RESOURCE;
 import java.util.List;
 import java.util.Objects;
 import org.polypheny.db.catalog.Catalog.SchemaType;
+import org.polypheny.db.catalog.exceptions.SchemaAlreadyExistsException;
 import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.jdbc.Context;
 import org.polypheny.db.sql.SqlCreate;
@@ -99,8 +100,11 @@ public class SqlCreateSchema extends SqlCreate implements SqlExecutableStatement
 
     @Override
     public void execute( Context context, Statement statement ) {
-
-        DdlManager.getInstance().createSchema( name.getSimple(), context.getDatabaseId(), type, context.getCurrentUserId(), ifNotExists, replace, name.getParserPosition() );
+        try {
+            DdlManager.getInstance().createSchema( name.getSimple(), context.getDatabaseId(), type, context.getCurrentUserId(), ifNotExists, replace );
+        } catch ( SchemaAlreadyExistsException e ) {
+            throw SqlUtil.newContextException( name.getParserPosition(), RESOURCE.schemaExists( name.getSimple() ) );
+        }
 
     }
 

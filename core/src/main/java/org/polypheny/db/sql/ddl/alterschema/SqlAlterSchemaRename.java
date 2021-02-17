@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Objects;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.entity.CatalogSchema;
+import org.polypheny.db.catalog.exceptions.SchemaAlreadyExistsException;
 import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.jdbc.Context;
@@ -71,7 +72,13 @@ public class SqlAlterSchemaRename extends SqlAlterSchema {
 
     @Override
     public void execute( Context context, Statement statement ) {
-        DdlManager.getInstance().alterSchemaRename( newName.getSimple(), oldName.getSimple(), context.getDatabaseId(), newName.getParserPosition(), oldName.getParserPosition() );
+        try {
+            DdlManager.getInstance().alterSchemaRename( newName.getSimple(), oldName.getSimple(), context.getDatabaseId() );
+        } catch ( SchemaAlreadyExistsException e ) {
+            throw SqlUtil.newContextException( newName.getParserPosition(), RESOURCE.schemaExists( newName.getSimple() ) );
+        } catch ( UnknownSchemaException e ) {
+            throw SqlUtil.newContextException( oldName.getParserPosition(), RESOURCE.schemaNotFound( oldName.getSimple() ) );
+        }
     }
 
 }

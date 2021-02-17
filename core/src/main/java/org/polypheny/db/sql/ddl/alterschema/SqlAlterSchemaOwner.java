@@ -76,7 +76,13 @@ public class SqlAlterSchemaOwner extends SqlAlterSchema {
 
     @Override
     public void execute( Context context, Statement statement ) {
-        DdlManager.getInstance().alterSchemaOwner( schema.getSimple(), owner.getSimple(), context.getDatabaseId(), schema.getParserPosition(), owner.getParserPosition() );
+        try {
+            DdlManager.getInstance().alterSchemaOwner( schema.getSimple(), owner.getSimple(), context.getDatabaseId() );
+        } catch ( UnknownSchemaException e ) {
+            throw SqlUtil.newContextException( schema.getParserPosition(), RESOURCE.schemaNotFound( schema.getSimple() ) );
+        } catch ( UnknownUserException e ) {
+            throw SqlUtil.newContextException( owner.getParserPosition(), RESOURCE.userNotFound( owner.getSimple() ) );
+        }
     }
 
 }

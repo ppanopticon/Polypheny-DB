@@ -17,32 +17,20 @@
 package org.polypheny.db.sql.ddl.altertable;
 
 
-import static org.polypheny.db.util.Static.RESOURCE;
-
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
-import org.polypheny.db.adapter.AdapterManager;
-import org.polypheny.db.adapter.DataSource;
-import org.polypheny.db.adapter.DataSource.ExportedColumn;
 import org.polypheny.db.catalog.Catalog;
-import org.polypheny.db.catalog.Catalog.Collation;
-import org.polypheny.db.catalog.Catalog.PlacementType;
-import org.polypheny.db.catalog.Catalog.TableType;
-import org.polypheny.db.catalog.entity.CatalogAdapter;
 import org.polypheny.db.catalog.entity.CatalogColumn;
-import org.polypheny.db.catalog.entity.CatalogColumnPlacement;
 import org.polypheny.db.catalog.entity.CatalogTable;
 import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.jdbc.Context;
 import org.polypheny.db.sql.SqlIdentifier;
 import org.polypheny.db.sql.SqlNode;
-import org.polypheny.db.sql.SqlUtil;
 import org.polypheny.db.sql.SqlWriter;
 import org.polypheny.db.sql.ddl.SqlAlterTable;
 import org.polypheny.db.sql.parser.SqlParserPos;
 import org.polypheny.db.transaction.Statement;
-import org.polypheny.db.type.PolyType;
 import org.polypheny.db.util.ImmutableNullableList;
 
 
@@ -127,7 +115,7 @@ public class SqlAlterSourceTableAddColumn extends SqlAlterTable {
         }
 
 
-        DdlManager.getInstance().alterTableAddColumn( catalogTable, columnPhysical.getSimple(), columnLogical.getSimple(), beforeColumn, afterColumn, defaultValue, columnLogical.getParserPosition() );
+        DdlManager.getInstance().alterSourceTableAddColumn( catalogTable, columnPhysical.getSimple(), columnLogical.getSimple(), beforeColumn, afterColumn, defaultValue, columnLogical.getParserPosition() );
 
         // Rest plan cache and implementation cache (not sure if required in this case)
         statement.getQueryProcessor().resetCaches();
