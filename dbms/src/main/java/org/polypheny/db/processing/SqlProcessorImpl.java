@@ -21,13 +21,8 @@ import static org.polypheny.db.util.Static.RESOURCE;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.avatica.AvaticaSeverity;
@@ -45,6 +40,7 @@ import org.polypheny.db.catalog.exceptions.UnknownDatabaseException;
 import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.catalog.exceptions.UnknownTableException;
 import org.polypheny.db.config.RuntimeConfig;
+import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.information.InformationGroup;
 import org.polypheny.db.information.InformationManager;
 import org.polypheny.db.information.InformationPage;
@@ -62,7 +58,6 @@ import org.polypheny.db.rex.RexBuilder;
 import org.polypheny.db.routing.ExecutionTimeMonitor;
 import org.polypheny.db.runtime.PolyphenyDbException;
 import org.polypheny.db.sql.SqlBasicCall;
-import org.polypheny.db.sql.SqlCharStringLiteral;
 import org.polypheny.db.sql.SqlExecutableStatement;
 import org.polypheny.db.sql.SqlExplainFormat;
 import org.polypheny.db.sql.SqlExplainLevel;
@@ -73,6 +68,7 @@ import org.polypheny.db.sql.SqlLiteral;
 import org.polypheny.db.sql.SqlNode;
 import org.polypheny.db.sql.SqlNodeList;
 import org.polypheny.db.sql.SqlUtil;
+import org.polypheny.db.sql.ddl.SqlCreateSchema;
 import org.polypheny.db.sql.dialect.PolyphenyDbSqlDialect;
 import org.polypheny.db.sql.fun.SqlStdOperatorTable;
 import org.polypheny.db.sql.parser.SqlParseException;
@@ -247,6 +243,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                 LockManager.INSTANCE.lock( LockManager.GLOBAL_LOCK, (TransactionImpl) statement.getTransaction(), LockMode.EXCLUSIVE );
                 // Execute statement
                 ((SqlExecutableStatement) parsed).execute( statement.getPrepareContext(), statement );
+
                 Catalog.getInstance().commit();
                 return new PolyphenyDbSignature<>(
                         parsed.toSqlString( PolyphenyDbSqlDialect.DEFAULT ).getSql(),
@@ -291,7 +288,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
             SchemaType schemaType = Catalog.getInstance().getSchema( catalogTable.schemaId ).schemaType;
 
             if ( schemaType == SchemaType.DOCUMENT ) {
-                getMissingColumns( insert, oldColumnList, catalogTable, transaction.createStatement() );
+                createMissingColumns( insert, oldColumnList, catalogTable, transaction.createStatement() );
                 return;
             }
 
@@ -357,9 +354,6 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
                 pos++;
             }
 
-            // add new generated Columns
-            // newColsNames.forEach( name -> newColumnList.add( new SqlIdentifier( name, SqlParserPos.ZERO ) ) );
-
             // Add new column list
             insert.setColumnList( newColumnList );
             // Replace value in parser tree
@@ -377,7 +371,7 @@ public class SqlProcessorImpl implements SqlProcessor, ViewExpander {
     /**
      * Add
      */
-    private void getMissingColumns( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable, Statement statement ) {
+    private void createMissingColumns( SqlInsert insert, SqlNodeList oldColumnList, CatalogTable catalogTable, Statement statement ) {
         List<String> columnNames = catalogTable.getColumnNames();
         Catalog catalog = Catalog.getInstance();
 

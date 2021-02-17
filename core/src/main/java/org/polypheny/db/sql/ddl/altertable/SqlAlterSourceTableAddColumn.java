@@ -33,6 +33,7 @@ import org.polypheny.db.catalog.entity.CatalogAdapter;
 import org.polypheny.db.catalog.entity.CatalogColumn;
 import org.polypheny.db.catalog.entity.CatalogColumnPlacement;
 import org.polypheny.db.catalog.entity.CatalogTable;
+import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.jdbc.Context;
 import org.polypheny.db.sql.SqlIdentifier;
 import org.polypheny.db.sql.SqlNode;
@@ -125,98 +126,8 @@ public class SqlAlterSourceTableAddColumn extends SqlAlterTable {
             afterColumn = getCatalogColumn( catalogTable.id, afterColumnName );
         }
 
-        if ( catalog.checkIfExistsColumn( catalogTable.id, columnLogical.getSimple() ) ) {
-            throw SqlUtil.newContextException( columnLogical.getParserPosition(), RESOURCE.columnExists( columnLogical.getSimple() ) );
-        }
 
-        // Make sure that the table is of table type SOURCE
-        if ( catalogTable.tableType != TableType.SOURCE ) {
-            throw new RuntimeException( "Table '" + catalogTable.name + "' is not of type SOURCE!" );
-        }
-
-        // Make sure there is only one adapter
-        if ( catalog.getColumnPlacements( catalogTable.columnIds.get( 0 ) ).size() != 1 ) {
-            throw new RuntimeException( "The table has an unexpected number of placements!" );
-        }
-
-        int adapterId = catalog.getColumnPlacements( catalogTable.columnIds.get( 0 ) ).get( 0 ).adapterId;
-        CatalogAdapter catalogAdapter = catalog.getAdapter( adapterId );
-        DataSource dataSource = (DataSource) AdapterManager.getInstance().getAdapter( adapterId );
-
-        String physicalTableName = catalog.getColumnPlacements( catalogTable.columnIds.get( 0 ) ).get( 0 ).physicalTableName;
-        List<ExportedColumn> exportedColumns = dataSource.getExportedColumns().get( physicalTableName );
-
-        // Check if physicalColumnName is valid
-        ExportedColumn exportedColumn = null;
-        for ( ExportedColumn ec : exportedColumns ) {
-            if ( ec.physicalColumnName.equalsIgnoreCase( columnPhysical.getSimple() ) ) {
-                exportedColumn = ec;
-            }
-        }
-        if ( exportedColumn == null ) {
-            throw new RuntimeException( "Invalid physical column name '" + columnPhysical.getSimple() + "'!" );
-        }
-
-        // Make sure this physical column has not already been added to this table
-        for ( CatalogColumnPlacement ccp : catalog.getColumnPlacementsOnAdapter( adapterId, catalogTable.id ) ) {
-            if ( ccp.physicalColumnName.equalsIgnoreCase( columnPhysical.getSimple() ) ) {
-                throw new RuntimeException( "The physical column '" + columnPhysical.getSimple() + "' has already been added to this table!" );
-            }
-        }
-
-        List<CatalogColumn> columns = catalog.getColumns( catalogTable.id );
-        int position = columns.size() + 1;
-        if ( beforeColumn != null || afterColumn != null ) {
-            if ( beforeColumn != null ) {
-                position = beforeColumn.position;
-            } else {
-                position = afterColumn.position + 1;
-            }
-            // Update position of the other columns
-            for ( int i = columns.size(); i >= position; i-- ) {
-                catalog.setColumnPosition( columns.get( i - 1 ).id, i + 1 );
-            }
-        }
-
-        long columnId = catalog.addColumn(
-                columnLogical.getSimple(),
-                catalogTable.id,
-                position,
-                exportedColumn.type,
-                exportedColumn.collectionsType,
-                exportedColumn.length,
-                exportedColumn.scale,
-                exportedColumn.dimension,
-                exportedColumn.cardinality,
-                exportedColumn.nullable,
-                Collation.CASE_INSENSITIVE
-        );
-        CatalogColumn addedColumn = catalog.getColumn( columnId );
-
-        // Add default value
-        if ( defaultValue != null ) {
-            // TODO: String is only a temporal solution for default values
-            String v = defaultValue.toString();
-            if ( v.startsWith( "'" ) ) {
-                v = v.substring( 1, v.length() - 1 );
-            }
-            catalog.setDefaultValue( addedColumn.id, PolyType.VARCHAR, v );
-
-            // Update addedColumn variable
-            addedColumn = catalog.getColumn( columnId );
-        }
-
-        // Add column placement
-        catalog.addColumnPlacement(
-                adapterId,
-                addedColumn.id,
-                PlacementType.STATIC,
-                exportedColumn.physicalSchemaName,
-                exportedColumn.physicalTableName,
-                exportedColumn.physicalColumnName );
-
-        // Set column position
-        catalog.updateColumnPlacementPhysicalPosition( adapterId, columnId, exportedColumn.physicalPosition );
+        DdlManager.getInstance().alterTableAddColumn( catalogTable, columnPhysical.getSimple(), columnLogical.getSimple(), beforeColumn, afterColumn, defaultValue, columnLogical.getParserPosition() );
 
         // Rest plan cache and implementation cache (not sure if required in this case)
         statement.getQueryProcessor().resetCaches();

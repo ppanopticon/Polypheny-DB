@@ -38,8 +38,8 @@ import static org.polypheny.db.util.Static.RESOURCE;
 
 import java.util.List;
 import java.util.Objects;
-import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.Catalog.SchemaType;
+import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.jdbc.Context;
 import org.polypheny.db.sql.SqlCreate;
 import org.polypheny.db.sql.SqlExecutableStatement;
@@ -99,24 +99,9 @@ public class SqlCreateSchema extends SqlCreate implements SqlExecutableStatement
 
     @Override
     public void execute( Context context, Statement statement ) {
-        Catalog catalog = Catalog.getInstance();
-        // Check if there is already a schema with this name
-        if ( catalog.checkIfExistsSchema( context.getDatabaseId(), name.getSimple() ) ) {
-            if ( ifNotExists ) {
-                // It is ok that there is already a schema with this name because "IF NOT EXISTS" was specified
-                return;
-            } else if ( replace ) {
-                throw new RuntimeException( "Replacing schema is not yet supported." );
-            } else {
-                throw SqlUtil.newContextException( name.getParserPosition(), RESOURCE.schemaExists( name.getSimple() ) );
-            }
-        } else {
-            long id = catalog.addSchema(
-                    name.getSimple(),
-                    context.getDatabaseId(),
-                    context.getCurrentUserId(),
-                    type );
-        }
+
+        DdlManager.getInstance().createSchema( name.getSimple(), context.getDatabaseId(), type, context.getCurrentUserId(), ifNotExists, replace, name.getParserPosition() );
+
     }
 
 }
