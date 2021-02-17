@@ -16,8 +16,6 @@
 
 package org.polypheny.db;
 
-import static org.polypheny.db.util.Static.RESOURCE;
-
 import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,7 +23,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.swing.plaf.nimbus.State;
 import org.apache.commons.lang3.StringUtils;
 import org.polypheny.db.adapter.Adapter;
 import org.polypheny.db.adapter.AdapterManager;
@@ -45,6 +42,10 @@ import org.polypheny.db.catalog.entity.CatalogAdapter;
 import org.polypheny.db.catalog.entity.CatalogAdapter.AdapterType;
 import org.polypheny.db.catalog.entity.CatalogColumn;
 import org.polypheny.db.catalog.entity.CatalogColumnPlacement;
+import org.polypheny.db.catalog.entity.CatalogConstraint;
+import org.polypheny.db.catalog.entity.CatalogForeignKey;
+import org.polypheny.db.catalog.entity.CatalogIndex;
+import org.polypheny.db.catalog.entity.CatalogKey;
 import org.polypheny.db.catalog.entity.CatalogPrimaryKey;
 import org.polypheny.db.catalog.entity.CatalogSchema;
 import org.polypheny.db.catalog.entity.CatalogTable;
@@ -52,9 +53,14 @@ import org.polypheny.db.catalog.entity.CatalogUser;
 import org.polypheny.db.catalog.exceptions.ColumnAlreadyExistsException;
 import org.polypheny.db.catalog.exceptions.GenericCatalogException;
 import org.polypheny.db.catalog.exceptions.SchemaAlreadyExistsException;
+import org.polypheny.db.catalog.exceptions.TableAlreadyExistsException;
 import org.polypheny.db.catalog.exceptions.UnknownAdapterException;
+import org.polypheny.db.catalog.exceptions.UnknownCollationException;
 import org.polypheny.db.catalog.exceptions.UnknownColumnException;
+import org.polypheny.db.catalog.exceptions.UnknownConstraintException;
 import org.polypheny.db.catalog.exceptions.UnknownDatabaseException;
+import org.polypheny.db.catalog.exceptions.UnknownForeignKeyException;
+import org.polypheny.db.catalog.exceptions.UnknownIndexException;
 import org.polypheny.db.catalog.exceptions.UnknownKeyException;
 import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.catalog.exceptions.UnknownTableException;
@@ -63,18 +69,21 @@ import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.ddl.exception.AlterSourceException;
 import org.polypheny.db.ddl.exception.DdlOnSourceException;
 import org.polypheny.db.ddl.exception.IndexExistsException;
+import org.polypheny.db.ddl.exception.IndexPreventsRemovalException;
+import org.polypheny.db.ddl.exception.LastPlacementException;
 import org.polypheny.db.ddl.exception.MissingColumnPlacementException;
 import org.polypheny.db.ddl.exception.NotNullAndDefaultValueException;
 import org.polypheny.db.ddl.exception.PlacementAlreadyExistsException;
+import org.polypheny.db.ddl.exception.PlacementIsPrimaryException;
+import org.polypheny.db.ddl.exception.PlacementNotExistsException;
 import org.polypheny.db.ddl.exception.UnknownIndexMethodException;
 import org.polypheny.db.processing.DataMigrator;
 import org.polypheny.db.processing.QueryProcessor;
 import org.polypheny.db.routing.Router;
 import org.polypheny.db.runtime.PolyphenyDbContextException;
+import org.polypheny.db.runtime.PolyphenyDbException;
 import org.polypheny.db.sql.SqlDataTypeSpec;
-import org.polypheny.db.sql.SqlIdentifier;
 import org.polypheny.db.sql.SqlNode;
-import org.polypheny.db.sql.SqlUtil;
 import org.polypheny.db.sql.parser.SqlParserPos;
 import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.transaction.TransactionException;
@@ -88,6 +97,18 @@ public class DdlManagerImpl extends DdlManager {
 
     public DdlManagerImpl( Catalog catalog ) {
         this.catalog = catalog;
+    }
+
+
+    private void checkIfTableType( TableType tableType ) throws DdlOnSourceException {
+        if ( tableType != TableType.TABLE ) {
+            throw new DdlOnSourceException();
+        }
+    }
+
+
+    private CatalogColumn getCatalogColumn( long tableId, String columnName ) throws UnknownColumnException {
+        return catalog.getColumn( tableId, columnName );
     }
 
 
@@ -184,7 +205,7 @@ public class DdlManagerImpl extends DdlManager {
             name = StringUtils.chop( name );
         }
 
-        CatalogAdapter catalogAdapter = Catalog.getInstance().getAdapter( name );
+        CatalogAdapter catalogAdapter = catalog.getAdapter( name );
         if ( catalogAdapter.type == AdapterType.SOURCE ) {
             Set<Long> tablesToDrop = new HashSet<>();
             for ( CatalogColumnPlacement ccp : catalog.getColumnPlacementsOnAdapter( catalogAdapter.id ) ) {
@@ -261,10 +282,10 @@ public class DdlManagerImpl extends DdlManager {
 
 
     @Override
-    public void alterSourceTableAddColumn( CatalogTable catalogTable, String columnPhysicalName, String columnLogicalName, CatalogColumn beforeColumn, CatalogColumn afterColumn, SqlNode defaultValue, SqlParserPos columnLogicalPos ) {
+    public void alterSourceTableAddColumn( CatalogTable catalogTable, String columnPhysicalName, String columnLogicalName, CatalogColumn beforeColumn, CatalogColumn afterColumn, SqlNode defaultValue, Statement statement ) throws ColumnAlreadyExistsException {
 
         if ( catalog.checkIfExistsColumn( catalogTable.id, columnLogicalName ) ) {
-            throw SqlUtil.newContextException( columnLogicalPos, RESOURCE.columnExists( columnLogicalName ) );
+            throw new ColumnAlreadyExistsException( columnLogicalName, catalogTable.name );
         }
 
         // Make sure that the table is of table type SOURCE
@@ -354,6 +375,9 @@ public class DdlManagerImpl extends DdlManager {
 
         // Set column position
         catalog.updateColumnPlacementPhysicalPosition( adapterId, columnId, exportedColumn.physicalPosition );
+
+        // Rest plan cache and implementation cache (not sure if required in this case)
+        statement.getQueryProcessor().resetCaches();
     }
 
 
@@ -437,12 +461,12 @@ public class DdlManagerImpl extends DdlManager {
 
         List<Long> columnIds = new LinkedList<>();
         for ( String columnName : columnNames ) {
-            CatalogColumn catalogColumn = Catalog.getInstance().getColumn( catalogTable.id, columnName );
+            CatalogColumn catalogColumn = catalog.getColumn( catalogTable.id, columnName );
             columnIds.add( catalogColumn.id );
         }
         List<Long> referencesIds = new LinkedList<>();
         for ( String columnName : refColumnNames ) {
-            CatalogColumn catalogColumn = Catalog.getInstance().getColumn( refTable.id, columnName );
+            CatalogColumn catalogColumn = catalog.getColumn( refTable.id, columnName );
             referencesIds.add( catalogColumn.id );
         }
         catalog.addForeignKey( catalogTable.id, columnIds, refTable.id, referencesIds, constraintName, onUpdate, onDelete );
@@ -501,7 +525,7 @@ public class DdlManagerImpl extends DdlManager {
                     type,
                     indexName );
 
-            IndexManager.getInstance().addIndex( Catalog.getInstance().getIndex( indexId ), statement );
+            IndexManager.getInstance().addIndex( catalog.getIndex( indexId ), statement );
         } else { // Store Index
 
             // Check if there if all required columns are present on this store
@@ -597,9 +621,7 @@ public class DdlManagerImpl extends DdlManager {
     @Override
     public void alterTableAddPrimaryKey( CatalogTable catalogTable, List<String> columnNames, Statement statement ) throws DdlOnSourceException {
         // Make sure that this is a table of type TABLE (and not SOURCE)
-        if ( catalogTable.tableType != TableType.TABLE ) {
-            throw new DdlOnSourceException();
-        }
+        checkIfTableType( catalogTable.tableType );
 
         try {
             CatalogPrimaryKey oldPk = catalog.getPrimaryKey( catalogTable.primaryKey );
@@ -640,21 +662,444 @@ public class DdlManagerImpl extends DdlManager {
     @Override
     public void alterTableAddUniqueConstraint( CatalogTable catalogTable, List<String> columnNames, String constraintName ) throws DdlOnSourceException {
         // Make sure that this is a table of type TABLE (and not SOURCE)
-        if ( catalogTable.tableType != TableType.TABLE ) {
-            throw new DdlOnSourceException();
-        }
+        checkIfTableType( catalogTable.tableType );
 
         try {
             List<Long> columnIds = new LinkedList<>();
             for ( String columnName : columnNames ) {
-                CatalogColumn catalogColumn = Catalog.getInstance().getColumn( catalogTable.id, columnName );
+                CatalogColumn catalogColumn = catalog.getColumn( catalogTable.id, columnName );
                 columnIds.add( catalogColumn.id );
             }
-            Catalog.getInstance().addUniqueConstraint( catalogTable.id, constraintName, columnIds );
+            catalog.addUniqueConstraint( catalogTable.id, constraintName, columnIds );
         } catch ( GenericCatalogException | UnknownColumnException e ) {
             throw new RuntimeException( e );
         }
     }
 
+
+    @Override
+    public void alterTableDropColumn( CatalogTable catalogTable, CatalogColumn catalogColumn, Statement statement ) {
+
+        if ( catalogTable.columnIds.size() < 2 ) {
+            throw new RuntimeException( "Cannot drop sole column of table " + catalogTable.name );
+        }
+
+        // Check if column is part of an key
+        for ( CatalogKey key : catalog.getTableKeys( catalogTable.id ) ) {
+            if ( key.columnIds.contains( catalogColumn.id ) ) {
+                if ( catalog.isPrimaryKey( key.id ) ) {
+                    throw new PolyphenyDbException( "Cannot drop column '" + catalogColumn.name + "' because it is part of the primary key." );
+                } else if ( catalog.isIndex( key.id ) ) {
+                    throw new PolyphenyDbException( "Cannot drop column '" + catalogColumn.name + "' because it is part of the index with the name: '" + catalog.getIndexes( key ).get( 0 ).name + "'." );
+                } else if ( catalog.isForeignKey( key.id ) ) {
+                    throw new PolyphenyDbException( "Cannot drop column '" + catalogColumn.name + "' because it is part of the foreign key with the name: '" + catalog.getForeignKeys( key ).get( 0 ).name + "'." );
+                } else if ( catalog.isConstraint( key.id ) ) {
+                    throw new PolyphenyDbException( "Cannot drop column '" + catalogColumn.name + "' because it is part of the constraint with the name: '" + catalog.getConstraints( key ).get( 0 ).name + "'." );
+                }
+                throw new PolyphenyDbException( "Ok, strange... Something is going wrong here!" );
+            }
+        }
+
+        // Delete column from underlying data stores
+        for ( CatalogColumnPlacement dp : catalog.getColumnPlacementsByColumn( catalogColumn.id ) ) {
+            if ( catalogTable.tableType == TableType.TABLE ) {
+                AdapterManager.getInstance().getStore( dp.adapterId ).dropColumn( statement.getPrepareContext(), dp );
+            }
+            catalog.deleteColumnPlacement( dp.adapterId, dp.columnId );
+        }
+
+        // Delete from catalog
+        List<CatalogColumn> columns = catalog.getColumns( catalogTable.id );
+        catalog.deleteColumn( catalogColumn.id );
+        if ( catalogColumn.position != columns.size() ) {
+            // Update position of the other columns
+            for ( int i = catalogColumn.position; i < columns.size(); i++ ) {
+                catalog.setColumnPosition( columns.get( i ).id, i );
+            }
+        }
+
+        // Rest plan cache and implementation cache (not sure if required in this case)
+        statement.getQueryProcessor().resetCaches();
+    }
+
+
+    @Override
+    public void alterTableDropConstraint( CatalogTable catalogTable, String constraintName ) throws DdlOnSourceException {
+        // Make sure that this is a table of type TABLE (and not SOURCE)
+        checkIfTableType( catalogTable.tableType );
+
+        try {
+            CatalogConstraint constraint = catalog.getConstraint( catalogTable.id, constraintName );
+            catalog.deleteConstraint( constraint.id );
+        } catch ( GenericCatalogException | UnknownConstraintException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public void alterTableDropForeignKey( CatalogTable catalogTable, String foreignKeyName ) throws DdlOnSourceException {
+        // Make sure that this is a table of type TABLE (and not SOURCE)
+        checkIfTableType( catalogTable.tableType );
+
+        try {
+            CatalogForeignKey foreignKey = catalog.getForeignKey( catalogTable.id, foreignKeyName );
+            catalog.deleteForeignKey( foreignKey.id );
+        } catch ( GenericCatalogException | UnknownForeignKeyException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public void alterTableDropIndex( CatalogTable catalogTable, String indexName, Statement statement ) throws DdlOnSourceException {
+        // Make sure that this is a table of type TABLE (and not SOURCE)
+        checkIfTableType( catalogTable.tableType );
+
+        try {
+            CatalogIndex index = catalog.getIndex( catalogTable.id, indexName );
+
+            if ( index.location == 0 ) {
+                IndexManager.getInstance().deleteIndex( index );
+            } else {
+                DataStore storeInstance = AdapterManager.getInstance().getStore( index.location );
+                storeInstance.dropIndex( statement.getPrepareContext(), index );
+            }
+
+            catalog.deleteIndex( index.id );
+        } catch ( UnknownIndexException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public void alterTableDropPlacement( CatalogTable catalogTable, DataStore storeInstance, Statement statement ) throws PlacementNotExistsException, LastPlacementException {
+        // Check whether this placement exists
+        if ( !catalogTable.placementsByAdapter.containsKey( storeInstance.getAdapterId() ) ) {
+            throw new PlacementNotExistsException();
+        }
+
+        // Check if there are is another placement for every column on this store
+        for ( CatalogColumnPlacement placement : catalog.getColumnPlacementsOnAdapter( storeInstance.getAdapterId(), catalogTable.id ) ) {
+            List<CatalogColumnPlacement> existingPlacements = catalog.getColumnPlacements( placement.columnId );
+            if ( existingPlacements.size() < 2 ) {
+                throw new LastPlacementException();
+            }
+        }
+        // Drop all indexes on this store
+        for ( CatalogIndex index : catalog.getIndexes( catalogTable.id, false ) ) {
+            if ( index.location == storeInstance.getAdapterId() ) {
+                if ( index.location == 0 ) {
+                    // Delete polystore index
+                    IndexManager.getInstance().deleteIndex( index );
+                } else {
+                    // Delete index on store
+                    AdapterManager.getInstance().getStore( index.location ).dropIndex( statement.getPrepareContext(), index );
+                }
+                // Delete index in catalog
+                catalog.deleteIndex( index.id );
+            }
+        }
+        // Physically delete the data from the store
+        storeInstance.dropTable( statement.getPrepareContext(), catalogTable );
+        // Inform routing
+        statement.getRouter().dropPlacements( catalog.getColumnPlacementsOnAdapter( storeInstance.getAdapterId(), catalogTable.id ) );
+        // Delete placement in the catalog
+        List<CatalogColumnPlacement> placements = catalog.getColumnPlacementsOnAdapter( storeInstance.getAdapterId(), catalogTable.id );
+        for ( CatalogColumnPlacement placement : placements ) {
+            catalog.deleteColumnPlacement( storeInstance.getAdapterId(), placement.columnId );
+        }
+    }
+
+
+    @Override
+    public void alterTableDropPrimaryKey( CatalogTable catalogTable ) throws DdlOnSourceException {
+        try {
+            // Make sure that this is a table of type TABLE (and not SOURCE)
+            checkIfTableType( catalogTable.tableType );
+
+            catalog.deletePrimaryKey( catalogTable.id );
+        } catch ( GenericCatalogException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public void alterTableModifyColumn( CatalogTable catalogTable, CatalogColumn catalogColumn, SqlDataTypeSpec type, String collation, SqlNode defaultValue, Boolean nullable, Boolean dropDefault, CatalogColumn beforeColumn, CatalogColumn afterColumn, Statement statement ) throws DdlOnSourceException {
+        try {
+            if ( type != null ) {
+                // Make sure that this is a table of type TABLE (and not SOURCE)
+                checkIfTableType( catalogTable.tableType );
+
+                PolyType dataType = PolyType.get( type.getTypeName().getSimple() );
+                final PolyType collectionsType = type.getCollectionsTypeName() == null ?
+                        null : PolyType.get( type.getCollectionsTypeName().getSimple() );
+                catalog.setColumnType(
+                        catalogColumn.id,
+                        dataType,
+                        collectionsType,
+                        type.getPrecision() == -1 ? null : type.getPrecision(),
+                        type.getScale() == -1 ? null : type.getScale(),
+                        type.getDimension() == -1 ? null : type.getDimension(),
+                        type.getCardinality() == -1 ? null : type.getCardinality() );
+                for ( CatalogColumnPlacement placement : catalog.getColumnPlacements( catalogColumn.id ) ) {
+                    AdapterManager.getInstance().getStore( placement.adapterId ).updateColumnType(
+                            statement.getPrepareContext(),
+                            placement,
+                            catalogColumn );
+                }
+            } else if ( nullable != null ) {
+                // Make sure that this is a table of type TABLE (and not SOURCE)
+                checkIfTableType( catalogTable.tableType );
+
+                catalog.setNullable( catalogColumn.id, nullable );
+            } else if ( beforeColumn != null || afterColumn != null ) {
+                int targetPosition;
+                CatalogColumn refColumn;
+                if ( beforeColumn != null ) {
+                    refColumn = beforeColumn;
+                    targetPosition = refColumn.position;
+                } else {
+                    refColumn = afterColumn;
+                    targetPosition = refColumn.position + 1;
+                }
+                if ( catalogColumn.id == refColumn.id ) {
+                    throw new RuntimeException( "Same column!" );
+                }
+                List<CatalogColumn> columns = catalog.getColumns( catalogTable.id );
+                if ( targetPosition < catalogColumn.position ) {  // Walk from last column to first column
+                    for ( int i = columns.size(); i >= 1; i-- ) {
+                        if ( i < catalogColumn.position && i >= targetPosition ) {
+                            catalog.setColumnPosition( columns.get( i - 1 ).id, i + 1 );
+                        } else if ( i == catalogColumn.position ) {
+                            catalog.setColumnPosition( catalogColumn.id, columns.size() + 1 );
+                        }
+                        if ( i == targetPosition ) {
+                            catalog.setColumnPosition( catalogColumn.id, targetPosition );
+                        }
+                    }
+                } else if ( targetPosition > catalogColumn.position ) { // Walk from first column to last column
+                    targetPosition--;
+                    for ( int i = 1; i <= columns.size(); i++ ) {
+                        if ( i > catalogColumn.position && i <= targetPosition ) {
+                            catalog.setColumnPosition( columns.get( i - 1 ).id, i - 1 );
+                        } else if ( i == catalogColumn.position ) {
+                            catalog.setColumnPosition( catalogColumn.id, columns.size() + 1 );
+                        }
+                        if ( i == targetPosition ) {
+                            catalog.setColumnPosition( catalogColumn.id, targetPosition );
+                        }
+                    }
+                } else {
+                    // Do nothing
+                }
+            } else if ( collation != null ) {
+                // Make sure that this is a table of type TABLE (and not SOURCE)
+                checkIfTableType( catalogTable.tableType );
+
+                Collation col = Collation.parse( collation );
+                catalog.setCollation( catalogColumn.id, col );
+            } else if ( defaultValue != null ) {
+                // TODO: String is only a temporal solution for default values
+                String v = defaultValue.toString();
+                if ( v.startsWith( "'" ) ) {
+                    v = v.substring( 1, v.length() - 1 );
+                }
+                catalog.setDefaultValue( catalogColumn.id, PolyType.VARCHAR, v );
+            } else if ( dropDefault != null && dropDefault ) {
+                catalog.deleteDefaultValue( catalogColumn.id );
+            } else {
+                throw new RuntimeException( "Unknown option" );
+            }
+
+            // Rest plan cache and implementation cache (not sure if required in this case)
+            statement.getQueryProcessor().resetCaches();
+        } catch ( GenericCatalogException | UnknownCollationException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public void alterTableModifyPlacement( CatalogTable catalogTable, List<Long> columnIds, DataStore storeInstance, Statement statement ) throws PlacementNotExistsException, IndexPreventsRemovalException, LastPlacementException {
+
+        // Check whether this placement already exists
+        if ( !catalogTable.placementsByAdapter.containsKey( storeInstance.getAdapterId() ) ) {
+
+            throw new PlacementNotExistsException();
+        }
+
+        // Which columns to remove
+        for ( CatalogColumnPlacement placement : catalog.getColumnPlacementsOnAdapter( storeInstance.getAdapterId(), catalogTable.id ) ) {
+            if ( !columnIds.contains( placement.columnId ) ) {
+                // Check whether there are any indexes located on the store requiring this column
+                for ( CatalogIndex index : catalog.getIndexes( catalogTable.id, false ) ) {
+                    if ( index.location == storeInstance.getAdapterId() && index.key.columnIds.contains( placement.columnId ) ) {
+                        throw new IndexPreventsRemovalException( index.name, catalog.getColumn( placement.columnId ).name );
+
+                    }
+                }
+                // Check whether the column is a primary key column
+                CatalogPrimaryKey primaryKey = catalog.getPrimaryKey( catalogTable.primaryKey );
+                if ( primaryKey.columnIds.contains( placement.columnId ) ) {
+                    // Check if the placement type is manual. If so, change to automatic
+                    if ( placement.placementType == PlacementType.MANUAL ) {
+                        // Make placement manual
+                        catalog.updateColumnPlacementType(
+                                storeInstance.getAdapterId(),
+                                placement.columnId,
+                                PlacementType.AUTOMATIC );
+                    }
+                } else {
+                    // It is not a primary key. Remove the column
+                    // Check if there are is another placement for this column
+                    List<CatalogColumnPlacement> existingPlacements = catalog.getColumnPlacements( placement.columnId );
+                    if ( existingPlacements.size() < 2 ) {
+                        throw new LastPlacementException();
+                    }
+                    // Drop Column on store
+                    storeInstance.dropColumn( statement.getPrepareContext(), catalog.getColumnPlacement( storeInstance.getAdapterId(), placement.columnId ) );
+                    // Drop column placement
+                    catalog.deleteColumnPlacement( storeInstance.getAdapterId(), placement.columnId );
+                }
+            }
+        }
+        // Which columns to add
+        List<CatalogColumn> addedColumns = new LinkedList<>();
+        for ( long cid : columnIds ) {
+            if ( catalog.checkIfExistsColumnPlacement( storeInstance.getAdapterId(), cid ) ) {
+                CatalogColumnPlacement placement = catalog.getColumnPlacement( storeInstance.getAdapterId(), cid );
+                if ( placement.placementType == PlacementType.AUTOMATIC ) {
+                    // Make placement manual
+                    catalog.updateColumnPlacementType( storeInstance.getAdapterId(), cid, PlacementType.MANUAL );
+                }
+            } else {
+                // Create column placement
+                catalog.addColumnPlacement(
+                        storeInstance.getAdapterId(),
+                        cid,
+                        PlacementType.MANUAL,
+                        null,
+                        null,
+                        null );
+                // Add column on store
+                storeInstance.addColumn( statement.getPrepareContext(), catalogTable, catalog.getColumn( cid ) );
+                // Add to list of columns for which we need to copy data
+                addedColumns.add( catalog.getColumn( cid ) );
+            }
+        }
+        // Copy the data to the newly added column placements
+        DataMigrator dataMigrator = statement.getTransaction().getDataMigrator();
+        if ( addedColumns.size() > 0 ) {
+            dataMigrator.copyData( statement.getTransaction(), catalog.getAdapter( storeInstance.getAdapterId() ), addedColumns );
+        }
+    }
+
+
+    @Override
+    public void alterTableModifyPlacementAndColumn( CatalogTable catalogTable, CatalogColumn catalogColumn, DataStore storeInstance, Statement statement ) throws UnknownAdapterException, PlacementNotExistsException, PlacementAlreadyExistsException {
+        if ( storeInstance == null ) {
+            throw new UnknownAdapterException( "" );
+        }
+        // Check whether this placement already exists
+        if ( !catalogTable.placementsByAdapter.containsKey( storeInstance.getAdapterId() ) ) {
+            throw new PlacementNotExistsException();
+        }
+        // Make sure that this store does not contain a placement of this column
+        if ( catalog.checkIfExistsColumnPlacement( storeInstance.getAdapterId(), catalogColumn.id ) ) {
+            CatalogColumnPlacement placement = catalog.getColumnPlacement( storeInstance.getAdapterId(), catalogColumn.id );
+            if ( placement.placementType == PlacementType.AUTOMATIC ) {
+                // Make placement manual
+                catalog.updateColumnPlacementType(
+                        storeInstance.getAdapterId(),
+                        catalogColumn.id,
+                        PlacementType.MANUAL );
+            } else {
+                throw new PlacementAlreadyExistsException();
+            }
+        } else {
+            // Create column placement
+            catalog.addColumnPlacement(
+                    storeInstance.getAdapterId(),
+                    catalogColumn.id,
+                    PlacementType.MANUAL,
+                    null,
+                    null,
+                    null );
+            // Add column on store
+            storeInstance.addColumn( statement.getPrepareContext(), catalogTable, catalogColumn );
+            // Copy the data to the newly added column placements
+            DataMigrator dataMigrator = statement.getTransaction().getDataMigrator();
+            dataMigrator.copyData( statement.getTransaction(), catalog.getAdapter( storeInstance.getAdapterId() ), ImmutableList.of( catalogColumn ) );
+        }
+    }
+
+
+    @Override
+    public void alterTableModifyPlacementDropColumn( CatalogTable catalogTable, CatalogColumn catalogColumn, DataStore storeInstance, Statement statement ) throws UnknownAdapterException, PlacementNotExistsException, IndexPreventsRemovalException, LastPlacementException, PlacementIsPrimaryException {
+        if ( storeInstance == null ) {
+            throw new UnknownAdapterException( "" );
+
+        }
+        // Check whether this placement already exists
+        if ( !catalogTable.placementsByAdapter.containsKey( storeInstance.getAdapterId() ) ) {
+            throw new PlacementNotExistsException();
+
+        }
+        // Check whether this store actually contains a placement of this column
+        if ( !catalog.checkIfExistsColumnPlacement( storeInstance.getAdapterId(), catalogColumn.id ) ) {
+            throw new PlacementNotExistsException();
+        }
+        // Check whether there are any indexes located on the store requiring this column
+        for ( CatalogIndex index : catalog.getIndexes( catalogTable.id, false ) ) {
+            if ( index.location == storeInstance.getAdapterId() && index.key.columnIds.contains( catalogColumn.id ) ) {
+                throw new IndexPreventsRemovalException( index.name, catalogColumn.name );
+            }
+        }
+        // Check if there are is another placement for this column
+        List<CatalogColumnPlacement> existingPlacements = catalog.getColumnPlacements( catalogColumn.id );
+        if ( existingPlacements.size() < 2 ) {
+            throw new LastPlacementException();
+        }
+        // Check whether the column to drop is a primary key
+        CatalogPrimaryKey primaryKey = catalog.getPrimaryKey( catalogTable.primaryKey );
+        if ( primaryKey.columnIds.contains( catalogColumn.id ) ) {
+            throw new PlacementIsPrimaryException();
+        }
+        // Drop Column on store
+        storeInstance.dropColumn( statement.getPrepareContext(), catalog.getColumnPlacement( storeInstance.getAdapterId(), catalogColumn.id ) );
+        // Drop column placement
+        catalog.deleteColumnPlacement( storeInstance.getAdapterId(), catalogColumn.id );
+    }
+
+
+    @Override
+    public void alterTableOwner( CatalogTable catalogTable, String newOwnerName ) throws UnknownUserException {
+        CatalogUser catalogUser = catalog.getUser( newOwnerName );
+        catalog.setTableOwner( catalogTable.id, catalogUser.id );
+    }
+
+
+    @Override
+    public void alterTableRename( CatalogTable catalogTable, String newTableName, Statement statement ) throws TableAlreadyExistsException {
+        if ( catalog.checkIfExistsTable( catalogTable.schemaId, newTableName ) ) {
+            throw new TableAlreadyExistsException();
+        }
+        catalog.renameTable( catalogTable.id, newTableName );
+
+        // Rest plan cache and implementation cache (not sure if required in this case)
+        statement.getQueryProcessor().resetCaches();
+    }
+
+
+    @Override
+    public void renameColumn( CatalogColumn catalogColumn, String newColumnName, Statement statement ) {
+        catalog.renameColumn( catalogColumn.id, newColumnName );
+        // TODO DL: check if new name already is used
+        // Rest plan cache and implementation cache (not sure if required in this case)
+        statement.getQueryProcessor().resetCaches();
+    }
 
 }

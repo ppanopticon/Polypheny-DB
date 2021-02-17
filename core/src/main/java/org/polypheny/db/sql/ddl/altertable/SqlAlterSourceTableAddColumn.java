@@ -17,16 +17,20 @@
 package org.polypheny.db.sql.ddl.altertable;
 
 
+import static org.polypheny.db.util.Static.RESOURCE;
+
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.entity.CatalogColumn;
 import org.polypheny.db.catalog.entity.CatalogTable;
+import org.polypheny.db.catalog.exceptions.ColumnAlreadyExistsException;
 import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.jdbc.Context;
 import org.polypheny.db.sql.SqlIdentifier;
 import org.polypheny.db.sql.SqlNode;
+import org.polypheny.db.sql.SqlUtil;
 import org.polypheny.db.sql.SqlWriter;
 import org.polypheny.db.sql.ddl.SqlAlterTable;
 import org.polypheny.db.sql.parser.SqlParserPos;
@@ -98,7 +102,6 @@ public class SqlAlterSourceTableAddColumn extends SqlAlterTable {
 
     @Override
     public void execute( Context context, Statement statement ) {
-        Catalog catalog = Catalog.getInstance();
         CatalogTable catalogTable = getCatalogTable( context, table );
 
         if ( columnLogical.names.size() != 1 ) {
@@ -114,11 +117,12 @@ public class SqlAlterSourceTableAddColumn extends SqlAlterTable {
             afterColumn = getCatalogColumn( catalogTable.id, afterColumnName );
         }
 
+        try {
+            DdlManager.getInstance().alterSourceTableAddColumn( catalogTable, columnPhysical.getSimple(), columnLogical.getSimple(), beforeColumn, afterColumn, defaultValue, statement );
+        } catch ( ColumnAlreadyExistsException e ) {
+            throw SqlUtil.newContextException( columnLogical.getParserPosition(), RESOURCE.columnExists( columnLogical.getSimple() ) );
+        }
 
-        DdlManager.getInstance().alterSourceTableAddColumn( catalogTable, columnPhysical.getSimple(), columnLogical.getSimple(), beforeColumn, afterColumn, defaultValue, columnLogical.getParserPosition() );
-
-        // Rest plan cache and implementation cache (not sure if required in this case)
-        statement.getQueryProcessor().resetCaches();
     }
 
 }
