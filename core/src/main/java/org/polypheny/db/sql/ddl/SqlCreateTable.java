@@ -37,29 +37,17 @@ package org.polypheny.db.sql.ddl;
 import static org.polypheny.db.util.Static.RESOURCE;
 
 import com.google.common.collect.ImmutableList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
-import org.apache.calcite.linq4j.Ord;
 import org.polypheny.db.adapter.DataStore;
 import org.polypheny.db.catalog.Catalog;
-import org.polypheny.db.catalog.Catalog.Collation;
 import org.polypheny.db.catalog.Catalog.PlacementType;
-import org.polypheny.db.catalog.Catalog.SchemaType;
-import org.polypheny.db.catalog.Catalog.TableType;
-import org.polypheny.db.catalog.NameGenerator;
-import org.polypheny.db.catalog.entity.CatalogColumn;
-import org.polypheny.db.catalog.entity.CatalogTable;
-import org.polypheny.db.catalog.exceptions.GenericCatalogException;
-import org.polypheny.db.catalog.exceptions.UnknownCollationException;
-import org.polypheny.db.catalog.exceptions.UnknownColumnException;
+import org.polypheny.db.catalog.exceptions.TableAlreadyExistsException;
 import org.polypheny.db.catalog.exceptions.UnknownDatabaseException;
 import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
-import org.polypheny.db.config.RuntimeConfig;
+import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.jdbc.Context;
-import org.polypheny.db.schema.ColumnStrategy;
 import org.polypheny.db.sql.SqlCreate;
-import org.polypheny.db.sql.SqlDataTypeSpec;
 import org.polypheny.db.sql.SqlExecutableStatement;
 import org.polypheny.db.sql.SqlIdentifier;
 import org.polypheny.db.sql.SqlKind;
@@ -71,8 +59,6 @@ import org.polypheny.db.sql.SqlUtil;
 import org.polypheny.db.sql.SqlWriter;
 import org.polypheny.db.sql.parser.SqlParserPos;
 import org.polypheny.db.transaction.Statement;
-import org.polypheny.db.type.PolyType;
-import org.polypheny.db.type.PolyTypeFamily;
 import org.polypheny.db.util.ImmutableNullableList;
 
 
@@ -143,6 +129,7 @@ public class SqlCreateTable extends SqlCreate implements SqlExecutableStatement 
         Catalog catalog = Catalog.getInstance();
         String tableName;
         long schemaId;
+
         try {
             if ( name.names.size() == 3 ) { // DatabaseName.SchemaName.TableName
                 schemaId = catalog.getSchema( name.names.get( 0 ), name.names.get( 1 ) ).id;
@@ -160,135 +147,15 @@ public class SqlCreateTable extends SqlCreate implements SqlExecutableStatement 
             throw SqlUtil.newContextException( name.getParserPosition(), RESOURCE.schemaNotFound( name.toString() ) );
         }
 
+        List<DataStore> stores = store != null ? ImmutableList.of( getDataStoreInstance( store ) ) : null;
+
+        PlacementType placementType = store == null ? PlacementType.AUTOMATIC : PlacementType.MANUAL;
+
         try {
-            // Check if there is already a table with this name
-            if ( catalog.checkIfExistsTable( schemaId, tableName ) ) {
-                if ( ifNotExists ) {
-                    // It is ok that there is already a table with this name because "IF NOT EXISTS" was specified
-                    return;
-                } else {
-                    throw SqlUtil.newContextException( name.getParserPosition(), RESOURCE.tableExists( tableName ) );
-                }
-            }
-
-            if ( this.columnList == null ) {
-                // "CREATE TABLE t" is invalid; because there is no "AS query" we need a list of column names and types, "CREATE TABLE t (INT c)".
-                throw SqlUtil.newContextException( SqlParserPos.ZERO, RESOURCE.createTableRequiresColumnList() );
-            }
-
-            List<DataStore> stores;
-            if ( this.store != null ) {
-                stores = ImmutableList.of( getDataStoreInstance( store ) );
-            } else {
-                // Ask router on which store(s) the table should be placed
-                stores = statement.getRouter().createTable( schemaId, statement );
-            }
-
-            long tableId = catalog.addTable(
-                    tableName,
-                    schemaId,
-                    context.getCurrentUserId(),
-                    TableType.TABLE,
-                    true,
-                    null );
-
-            List<SqlNode> columnList = this.columnList.getList();
-
-            int position = 1;
-            for ( Ord<SqlNode> c : Ord.zip( columnList ) ) {
-                addColumn( c, tableId, position, catalog, stores );
-                position++;
-            }
-
-            CatalogTable catalogTable = catalog.getTable( tableId );
-            for ( DataStore store : stores ) {
-                store.createTable( context, catalogTable );
-            }
-        } catch ( GenericCatalogException | UnknownColumnException | UnknownCollationException e ) {
-            throw new RuntimeException( e );
+            DdlManager.getInstance().createTable( schemaId, tableName, columnList != null ? columnList.getList() : null, ifNotExists, stores, placementType, statement );
+        } catch ( TableAlreadyExistsException e ) {
+            throw SqlUtil.newContextException( name.getParserPosition(), RESOURCE.tableExists( tableName ) );
         }
-    }
-
-
-    public void addColumn( Ord<SqlNode> c, long tableId, int position, Catalog catalog, List<DataStore> stores ) throws GenericCatalogException, UnknownColumnException, UnknownCollationException {
-        if ( c.e instanceof SqlColumnDeclaration ) {
-            final SqlColumnDeclaration columnDeclaration = (SqlColumnDeclaration) c.e;
-            final PolyType dataType = PolyType.get( columnDeclaration.dataType.getTypeName().getSimple() );
-            final PolyType collectionsType = columnDeclaration.dataType.getCollectionsTypeName() == null ?
-                    null : PolyType.get( columnDeclaration.dataType.getCollectionsTypeName().getSimple() );
-            Collation collation = getCollation( columnDeclaration, dataType );
-            long addedColumnId = catalog.addColumn(
-                    columnDeclaration.name.getSimple(),
-                    tableId,
-                    position,
-                    dataType,
-                    collectionsType,
-                    columnDeclaration.dataType.getPrecision() == -1 ? null : columnDeclaration.dataType.getPrecision(),
-                    columnDeclaration.dataType.getScale() == -1 ? null : columnDeclaration.dataType.getScale(),
-                    columnDeclaration.dataType.getDimension() == -1 ? null : columnDeclaration.dataType.getDimension(),
-                    columnDeclaration.dataType.getCardinality() == -1 ? null : columnDeclaration.dataType.getCardinality(),
-                    columnDeclaration.dataType.getNullable(),
-                    collation
-            );
-
-            for ( DataStore s : stores ) {
-                catalog.addColumnPlacement(
-                        s.getAdapterId(),
-                        addedColumnId,
-                        store == null ? PlacementType.AUTOMATIC : PlacementType.MANUAL,
-                        null,
-                        null,
-                        null );
-            }
-
-            // Add default value
-            if ( ((SqlColumnDeclaration) c.e).expression != null ) {
-                // TODO: String is only a temporal solution for default values
-                String v = ((SqlColumnDeclaration) c.e).expression.toString();
-                if ( v.startsWith( "'" ) ) {
-                    v = v.substring( 1, v.length() - 1 );
-                }
-                catalog.setDefaultValue( addedColumnId, PolyType.VARCHAR, v );
-            }
-        } else if ( c.e instanceof SqlKeyConstraint ) {
-            SqlKeyConstraint constraint = (SqlKeyConstraint) c.e;
-            List<Long> columnIds = new LinkedList<>();
-            for ( SqlNode node : constraint.getColumnList().getList() ) {
-                String columnName = node.toString();
-                CatalogColumn catalogColumn = catalog.getColumn( tableId, columnName );
-                columnIds.add( catalogColumn.id );
-            }
-            if ( constraint.getOperator() == SqlKeyConstraint.PRIMARY ) {
-                catalog.addPrimaryKey( tableId, columnIds );
-            } else if ( constraint.getOperator() == SqlKeyConstraint.UNIQUE ) {
-                String constraintName;
-                if ( constraint.getName() == null ) {
-                    constraintName = NameGenerator.generateConstraintName();
-                } else {
-                    constraintName = constraint.getName().getSimple();
-                }
-                catalog.addUniqueConstraint( tableId, constraintName, columnIds );
-            }
-        } else {
-            throw new AssertionError( c.e.getClass() );
-        }
-    }
-
-
-    private Collation getCollation( SqlColumnDeclaration columnDeclaration, PolyType dataType ) throws UnknownCollationException {
-        if ( dataType.getFamily() == PolyTypeFamily.CHARACTER ) {
-            if ( columnDeclaration.collation != null ) {
-                return Collation.parse( columnDeclaration.collation );
-            } else {
-                return getDefaultCollation(); // Set default collation
-            }
-        }
-        return null;
-    }
-
-
-    private Collation getDefaultCollation() {
-        return Collation.getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() );
     }
 
 }

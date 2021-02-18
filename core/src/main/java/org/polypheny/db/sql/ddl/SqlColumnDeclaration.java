@@ -36,6 +36,7 @@ package org.polypheny.db.sql.ddl;
 
 import com.google.common.collect.ImmutableList;
 import java.util.List;
+import lombok.Getter;
 import org.polypheny.db.schema.ColumnStrategy;
 import org.polypheny.db.sql.SqlCall;
 import org.polypheny.db.sql.SqlDataTypeSpec;
@@ -57,11 +58,14 @@ public class SqlColumnDeclaration extends SqlCall {
 
     private static final SqlSpecialOperator OPERATOR = new SqlSpecialOperator( "COLUMN_DECL", SqlKind.COLUMN_DECL );
 
+    @Getter
     final SqlIdentifier name;
+    @Getter
     final SqlDataTypeSpec dataType;
+    @Getter
     final SqlNode expression;
     final ColumnStrategy strategy;
-    final String collation;
+    public final String collation;
 
 
     /**
@@ -128,5 +132,6 @@ public class SqlColumnDeclaration extends SqlCall {
             writer.sep( ")" );
         }
     }
+
 }
 

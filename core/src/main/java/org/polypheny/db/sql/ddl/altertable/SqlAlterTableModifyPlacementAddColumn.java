@@ -19,21 +19,16 @@ package org.polypheny.db.sql.ddl.altertable;
 
 import static org.polypheny.db.util.Static.RESOURCE;
 
-import com.google.common.collect.ImmutableList;
 import java.util.List;
 import java.util.Objects;
 import org.polypheny.db.adapter.DataStore;
-import org.polypheny.db.catalog.Catalog;
-import org.polypheny.db.catalog.Catalog.PlacementType;
 import org.polypheny.db.catalog.entity.CatalogColumn;
-import org.polypheny.db.catalog.entity.CatalogColumnPlacement;
 import org.polypheny.db.catalog.entity.CatalogTable;
 import org.polypheny.db.catalog.exceptions.UnknownAdapterException;
 import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.ddl.exception.PlacementAlreadyExistsException;
 import org.polypheny.db.ddl.exception.PlacementNotExistsException;
 import org.polypheny.db.jdbc.Context;
-import org.polypheny.db.processing.DataMigrator;
 import org.polypheny.db.sql.SqlIdentifier;
 import org.polypheny.db.sql.SqlNode;
 import org.polypheny.db.sql.SqlUtil;
@@ -91,7 +86,7 @@ public class SqlAlterTableModifyPlacementAddColumn extends SqlAlterTable {
         DataStore storeInstance = getDataStoreInstance( storeName );
 
         try {
-            DdlManager.getInstance().alterTableModifyPlacementAndColumn( catalogTable, catalogColumn, storeInstance, statement);
+            DdlManager.getInstance().alterTableModifyPlacementAndColumn( catalogTable, catalogColumn, storeInstance, statement );
         } catch ( UnknownAdapterException e ) {
             throw SqlUtil.newContextException(
                     storeName.getParserPosition(),

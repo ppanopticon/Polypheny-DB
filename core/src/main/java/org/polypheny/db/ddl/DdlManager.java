@@ -19,8 +19,10 @@ package org.polypheny.db.ddl;
 
 import java.util.List;
 import java.util.Map;
+import org.apache.calcite.linq4j.Ord;
 import org.polypheny.db.adapter.DataStore;
 import org.polypheny.db.catalog.Catalog.ForeignKeyOption;
+import org.polypheny.db.catalog.Catalog.PlacementType;
 import org.polypheny.db.catalog.Catalog.SchemaType;
 import org.polypheny.db.catalog.entity.CatalogColumn;
 import org.polypheny.db.catalog.entity.CatalogTable;
@@ -29,6 +31,7 @@ import org.polypheny.db.catalog.exceptions.GenericCatalogException;
 import org.polypheny.db.catalog.exceptions.SchemaAlreadyExistsException;
 import org.polypheny.db.catalog.exceptions.TableAlreadyExistsException;
 import org.polypheny.db.catalog.exceptions.UnknownAdapterException;
+import org.polypheny.db.catalog.exceptions.UnknownCollationException;
 import org.polypheny.db.catalog.exceptions.UnknownColumnException;
 import org.polypheny.db.catalog.exceptions.UnknownDatabaseException;
 import org.polypheny.db.catalog.exceptions.UnknownKeyException;
@@ -45,6 +48,7 @@ import org.polypheny.db.ddl.exception.NotNullAndDefaultValueException;
 import org.polypheny.db.ddl.exception.PlacementAlreadyExistsException;
 import org.polypheny.db.ddl.exception.PlacementIsPrimaryException;
 import org.polypheny.db.ddl.exception.PlacementNotExistsException;
+import org.polypheny.db.ddl.exception.SchemaNotExistException;
 import org.polypheny.db.ddl.exception.UnknownIndexMethodException;
 import org.polypheny.db.processing.QueryProcessor;
 import org.polypheny.db.routing.Router;
@@ -357,4 +361,56 @@ public abstract class DdlManager {
      * @param statement the used statement
      */
     public abstract void renameColumn( CatalogColumn catalogColumn, String newColumnName, Statement statement );
+
+    /**
+     * Creates a new table with the provided columns
+     *
+     * @param schemaId the id of the schema to which the table belongs
+     * @param tableName the name of the new table
+     * @param columnList the list of the table
+     * @param ifNotExists if the table is only created, when it not exists
+     * @param stores all stores on which the table should be created
+     * @param placementType which placement type should be used
+     * @param statement the used statement
+     */
+    public abstract void createTable( long schemaId, String tableName, List<SqlNode> columnList, boolean ifNotExists, List<DataStore> stores, PlacementType placementType, Statement statement ) throws TableAlreadyExistsException;
+
+
+    /**
+     * Adds a new column to a given table  // TODO DL: refactor remove SqlNode usage
+     *
+     * @param c the column which is added
+     * @param tableId the id of the target table
+     * @param position the position of the new column
+     * @param stores the stores on which the column should be addded
+     * @param placementType the placement type used
+     */
+    public abstract void addColumn( Ord<SqlNode> c, long tableId, int position, List<DataStore> stores, PlacementType placementType ) throws GenericCatalogException, UnknownCollationException, UnknownColumnException;
+
+    /**
+     * Drops a specific schema
+     *
+     * @param databaseId the id to which the schema belongs
+     * @param schemaName the name of the schema to drop
+     * @param ifExists if the schema should only be dropped if it exists
+     * @param statement the used statement
+     */
+    public abstract void dropSchema( long databaseId, String schemaName, boolean ifExists, Statement statement ) throws SchemaNotExistException, DdlOnSourceException;
+
+    /**
+     * Drops a specific table
+     *
+     * @param catalogTable the target table
+     * @param statement the used statement
+     */
+    public abstract void dropTable( CatalogTable catalogTable, Statement statement ) throws DdlOnSourceException;
+
+    /**
+     * Truncates a specific table
+     *
+     * @param catalogTable the target table
+     * @param statement the used statement
+     */
+    public abstract void truncate( CatalogTable catalogTable, Statement statement );
+
 }

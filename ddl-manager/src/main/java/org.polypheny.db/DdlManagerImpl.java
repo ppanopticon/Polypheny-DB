@@ -16,6 +16,8 @@
 
 package org.polypheny.db;
 
+import static org.polypheny.db.util.Static.RESOURCE;
+
 import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -23,6 +25,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.calcite.linq4j.Ord;
 import org.apache.commons.lang3.StringUtils;
 import org.polypheny.db.adapter.Adapter;
 import org.polypheny.db.adapter.AdapterManager;
@@ -38,6 +41,7 @@ import org.polypheny.db.catalog.Catalog.IndexType;
 import org.polypheny.db.catalog.Catalog.PlacementType;
 import org.polypheny.db.catalog.Catalog.SchemaType;
 import org.polypheny.db.catalog.Catalog.TableType;
+import org.polypheny.db.catalog.NameGenerator;
 import org.polypheny.db.catalog.entity.CatalogAdapter;
 import org.polypheny.db.catalog.entity.CatalogAdapter.AdapterType;
 import org.polypheny.db.catalog.entity.CatalogColumn;
@@ -65,6 +69,7 @@ import org.polypheny.db.catalog.exceptions.UnknownKeyException;
 import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.catalog.exceptions.UnknownTableException;
 import org.polypheny.db.catalog.exceptions.UnknownUserException;
+import org.polypheny.db.config.RuntimeConfig;
 import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.ddl.exception.AlterSourceException;
 import org.polypheny.db.ddl.exception.DdlOnSourceException;
@@ -76,6 +81,7 @@ import org.polypheny.db.ddl.exception.NotNullAndDefaultValueException;
 import org.polypheny.db.ddl.exception.PlacementAlreadyExistsException;
 import org.polypheny.db.ddl.exception.PlacementIsPrimaryException;
 import org.polypheny.db.ddl.exception.PlacementNotExistsException;
+import org.polypheny.db.ddl.exception.SchemaNotExistException;
 import org.polypheny.db.ddl.exception.UnknownIndexMethodException;
 import org.polypheny.db.processing.DataMigrator;
 import org.polypheny.db.processing.QueryProcessor;
@@ -84,10 +90,14 @@ import org.polypheny.db.runtime.PolyphenyDbContextException;
 import org.polypheny.db.runtime.PolyphenyDbException;
 import org.polypheny.db.sql.SqlDataTypeSpec;
 import org.polypheny.db.sql.SqlNode;
+import org.polypheny.db.sql.SqlUtil;
+import org.polypheny.db.sql.ddl.SqlColumnDeclaration;
+import org.polypheny.db.sql.ddl.SqlKeyConstraint;
 import org.polypheny.db.sql.parser.SqlParserPos;
 import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.transaction.TransactionException;
 import org.polypheny.db.type.PolyType;
+import org.polypheny.db.type.PolyTypeFamily;
 
 
 public class DdlManagerImpl extends DdlManager {
@@ -109,6 +119,39 @@ public class DdlManagerImpl extends DdlManager {
 
     private CatalogColumn getCatalogColumn( long tableId, String columnName ) throws UnknownColumnException {
         return catalog.getColumn( tableId, columnName );
+    }
+
+
+    private Collation getCollation( SqlColumnDeclaration columnDeclaration, PolyType dataType ) throws UnknownCollationException {
+        if ( dataType.getFamily() == PolyTypeFamily.CHARACTER ) {
+            if ( columnDeclaration.collation != null ) {
+                return Collation.parse( columnDeclaration.collation );
+            } else {
+                return getDefaultCollation(); // Set default collation
+            }
+        }
+        return null;
+    }
+
+
+    protected DataStore getDataStoreInstance( int storeId ) throws DdlOnSourceException {
+        Adapter adapterInstance = AdapterManager.getInstance().getAdapter( storeId );
+        if ( adapterInstance == null ) {
+            throw new RuntimeException( "Unknown store id: " + storeId );
+        }
+        // Make sure it is a data store instance
+        if ( adapterInstance instanceof DataStore ) {
+            return (DataStore) adapterInstance;
+        } else if ( adapterInstance instanceof DataSource ) {
+            throw new DdlOnSourceException();
+        } else {
+            throw new RuntimeException( "Unknown kind of adapter: " + adapterInstance.getClass().getName() );
+        }
+    }
+
+
+    private Collation getDefaultCollation() {
+        return Collation.getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() );
     }
 
 
@@ -1097,9 +1140,265 @@ public class DdlManagerImpl extends DdlManager {
     @Override
     public void renameColumn( CatalogColumn catalogColumn, String newColumnName, Statement statement ) {
         catalog.renameColumn( catalogColumn.id, newColumnName );
-        // TODO DL: check if new name already is used
+
         // Rest plan cache and implementation cache (not sure if required in this case)
         statement.getQueryProcessor().resetCaches();
     }
+
+
+    @Override
+    public void createTable( long schemaId, String tableName, List<SqlNode> columnList, boolean ifNotExists, List<DataStore> stores, PlacementType placementType, Statement statement ) throws TableAlreadyExistsException {
+        try {
+            // Check if there is already a table with this name
+            if ( catalog.checkIfExistsTable( schemaId, tableName ) ) {
+                if ( ifNotExists ) {
+                    // It is ok that there is already a table with this name because "IF NOT EXISTS" was specified
+                    return;
+                } else {
+                    throw new TableAlreadyExistsException();
+                }
+            }
+
+            if ( columnList == null ) {
+                // "CREATE TABLE t" is invalid; because there is no "AS query" we need a list of column names and types, "CREATE TABLE t (INT c)".
+                throw SqlUtil.newContextException( SqlParserPos.ZERO, RESOURCE.createTableRequiresColumnList() );
+            }
+
+            if ( stores == null ) {
+                // Ask router on which store(s) the table should be placed
+                stores = statement.getRouter().createTable( schemaId, statement );
+            }
+
+            long tableId = catalog.addTable(
+                    tableName,
+                    schemaId,
+                    statement.getPrepareContext().getCurrentUserId(),
+                    TableType.TABLE,
+                    true,
+                    null );
+
+            int position = 1;
+            for ( Ord<SqlNode> c : Ord.zip( columnList ) ) {
+                addColumn( c, tableId, position, stores, placementType );
+                position++;
+            }
+
+            CatalogTable catalogTable = catalog.getTable( tableId );
+            for ( DataStore store : stores ) {
+                store.createTable( statement.getPrepareContext(), catalogTable );
+            }
+        } catch ( GenericCatalogException | UnknownColumnException | UnknownCollationException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    // TODO DL: refactor remove SqlNode
+    @Override
+    public void addColumn( Ord<SqlNode> c, long tableId, int position, List<DataStore> stores, PlacementType placementType ) throws GenericCatalogException, UnknownCollationException, UnknownColumnException {
+        if ( c.e instanceof SqlColumnDeclaration ) {
+            final SqlColumnDeclaration columnDeclaration = (SqlColumnDeclaration) c.e;
+            final PolyType dataType = PolyType.get( columnDeclaration.getDataType().getTypeName().getSimple() );
+            final PolyType collectionsType = columnDeclaration.getDataType().getCollectionsTypeName() == null ?
+                    null : PolyType.get( columnDeclaration.getDataType().getCollectionsTypeName().getSimple() );
+            Collation collation = getCollation( columnDeclaration, dataType );
+            long addedColumnId = catalog.addColumn(
+                    columnDeclaration.getName().getSimple(),
+                    tableId,
+                    position,
+                    dataType,
+                    collectionsType,
+                    columnDeclaration.getDataType().getPrecision() == -1 ? null : columnDeclaration.getDataType().getPrecision(),
+                    columnDeclaration.getDataType().getScale() == -1 ? null : columnDeclaration.getDataType().getScale(),
+                    columnDeclaration.getDataType().getDimension() == -1 ? null : columnDeclaration.getDataType().getDimension(),
+                    columnDeclaration.getDataType().getCardinality() == -1 ? null : columnDeclaration.getDataType().getCardinality(),
+                    columnDeclaration.getDataType().getNullable(),
+                    collation
+            );
+
+            for ( DataStore s : stores ) {
+                catalog.addColumnPlacement(
+                        s.getAdapterId(),
+                        addedColumnId,
+                        placementType,
+                        null,
+                        null,
+                        null );
+            }
+
+            // Add default value
+            if ( ((SqlColumnDeclaration) c.e).getExpression() != null ) {
+                // TODO: String is only a temporal solution for default values
+                String v = ((SqlColumnDeclaration) c.e).getExpression().toString();
+                if ( v.startsWith( "'" ) ) {
+                    v = v.substring( 1, v.length() - 1 );
+                }
+                catalog.setDefaultValue( addedColumnId, PolyType.VARCHAR, v );
+            }
+        } else if ( c.e instanceof SqlKeyConstraint ) {
+            SqlKeyConstraint constraint = (SqlKeyConstraint) c.e;
+            List<Long> columnIds = new LinkedList<>();
+            for ( SqlNode node : constraint.getColumnList().getList() ) {
+                String columnName = node.toString();
+                CatalogColumn catalogColumn = catalog.getColumn( tableId, columnName );
+                columnIds.add( catalogColumn.id );
+            }
+            if ( constraint.getOperator() == SqlKeyConstraint.PRIMARY ) {
+                catalog.addPrimaryKey( tableId, columnIds );
+            } else if ( constraint.getOperator() == SqlKeyConstraint.UNIQUE ) {
+                String constraintName;
+                if ( constraint.getName() == null ) {
+                    constraintName = NameGenerator.generateConstraintName();
+                } else {
+                    constraintName = constraint.getName().getSimple();
+                }
+                catalog.addUniqueConstraint( tableId, constraintName, columnIds );
+            }
+        } else {
+            throw new AssertionError( c.e.getClass() );
+        }
+    }
+
+
+    @Override
+    public void dropSchema( long databaseId, String schemaName, boolean ifExists, Statement statement ) throws SchemaNotExistException, DdlOnSourceException {
+        try {
+            // Check if there is a schema with this name
+            if ( catalog.checkIfExistsSchema( databaseId, schemaName ) ) {
+                CatalogSchema catalogSchema = catalog.getSchema( databaseId, schemaName );
+
+                // Drop all tables in this schema
+                List<CatalogTable> catalogTables = catalog.getTables( catalogSchema.id, null );
+                for ( CatalogTable catalogTable : catalogTables ) {
+                    dropTable( catalogTable, statement );
+                }
+
+                // Drop schema
+                catalog.deleteSchema( catalogSchema.id );
+            } else {
+                if ( ifExists ) {
+                    // This is ok because "IF EXISTS" was specified
+                    return;
+                } else {
+                    throw new SchemaNotExistException();
+                }
+            }
+        } catch ( UnknownSchemaException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public void dropTable( CatalogTable catalogTable, Statement statement ) throws DdlOnSourceException {
+        // Make sure that this is a table of type TABLE (and not SOURCE)
+        checkIfTableType( catalogTable.tableType );
+
+        // Check if there are foreign keys referencing this table
+        List<CatalogForeignKey> selfRefsToDelete = new LinkedList<>();
+        List<CatalogForeignKey> exportedKeys = catalog.getExportedKeys( catalogTable.id );
+        if ( exportedKeys.size() > 0 ) {
+            for ( CatalogForeignKey foreignKey : exportedKeys ) {
+                if ( foreignKey.tableId == catalogTable.id ) {
+                    // If this is a self-reference, drop it later.
+                    selfRefsToDelete.add( foreignKey );
+                } else {
+                    throw new PolyphenyDbException( "Cannot drop table '" + catalogTable.getSchemaName() + "." + catalogTable.name + "' because it is being referenced by '" + exportedKeys.get( 0 ).getSchemaName() + "." + exportedKeys.get( 0 ).getTableName() + "'." );
+                }
+            }
+
+        }
+
+        // Make sure that all adapters are of type store (and not source)
+        for ( int storeId : catalogTable.placementsByAdapter.keySet() ) {
+            getDataStoreInstance( storeId );
+        }
+
+        // Delete all indexes
+        for ( CatalogIndex index : catalog.getIndexes( catalogTable.id, false ) ) {
+            if ( index.location == 0 ) {
+                // Delete polystore index
+                IndexManager.getInstance().deleteIndex( index );
+            } else {
+                // Delete index on store
+                AdapterManager.getInstance().getStore( index.location ).dropIndex( statement.getPrepareContext(), index );
+            }
+            // Delete index in catalog
+            catalog.deleteIndex( index.id );
+        }
+
+        // Delete data from the stores and remove the column placement
+        for ( int storeId : catalogTable.placementsByAdapter.keySet() ) {
+            // Delete table on store
+            AdapterManager.getInstance().getStore( storeId ).dropTable( statement.getPrepareContext(), catalogTable );
+            // Inform routing
+            statement.getRouter().dropPlacements( catalog.getColumnPlacementsOnAdapter( storeId, catalogTable.id ) );
+            // Delete column placement in catalog
+            for ( Long columnId : catalogTable.columnIds ) {
+                if ( catalog.checkIfExistsColumnPlacement( storeId, columnId ) ) {
+                    catalog.deleteColumnPlacement( storeId, columnId );
+                }
+            }
+        }
+
+        // Delete the self-referencing foreign keys
+        try {
+            for ( CatalogForeignKey foreignKey : selfRefsToDelete ) {
+                catalog.deleteForeignKey( foreignKey.id );
+            }
+        } catch ( GenericCatalogException e ) {
+            throw new PolyphenyDbContextException( "Exception while deleting self-referencing foreign key constraints.", e );
+        }
+
+        // Delete indexes of this table
+        List<CatalogIndex> indexes = catalog.getIndexes( catalogTable.id, false );
+        for ( CatalogIndex index : indexes ) {
+            catalog.deleteIndex( index.id );
+            IndexManager.getInstance().deleteIndex( index );
+        }
+
+        // Delete keys and constraints
+        try {
+            // Remove primary key
+            catalog.deletePrimaryKey( catalogTable.id );
+            // Delete all foreign keys of the table
+            List<CatalogForeignKey> foreignKeys = catalog.getForeignKeys( catalogTable.id );
+            for ( CatalogForeignKey foreignKey : foreignKeys ) {
+                catalog.deleteForeignKey( foreignKey.id );
+            }
+            // Delete all constraints of the table
+            for ( CatalogConstraint constraint : catalog.getConstraints( catalogTable.id ) ) {
+                catalog.deleteConstraint( constraint.id );
+            }
+        } catch ( GenericCatalogException e ) {
+            throw new PolyphenyDbContextException( "Exception while dropping keys.", e );
+        }
+
+        // Delete columns
+        for ( Long columnId : catalogTable.columnIds ) {
+            catalog.deleteColumn( columnId );
+        }
+
+        // Delete the table
+        catalog.deleteTable( catalogTable.id );
+
+        // Rest plan cache and implementation cache
+        statement.getQueryProcessor().resetCaches();
+    }
+
+
+    @Override
+    public void truncate( CatalogTable catalogTable, Statement statement ) {
+        // Make sure that the table can be modified
+        if ( !catalogTable.modifiable ) {
+            throw new RuntimeException( "Unable to modify a read-only table!" );
+        }
+
+        //  Execute truncate on all placements
+        catalogTable.placementsByAdapter.forEach( ( adapterId, placements ) -> {
+            AdapterManager.getInstance().getAdapter( adapterId ).truncate( statement.getPrepareContext(), catalogTable );
+        } );
+    }
+
 
 }

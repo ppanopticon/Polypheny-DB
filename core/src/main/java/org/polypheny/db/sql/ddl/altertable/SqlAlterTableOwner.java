@@ -82,5 +82,6 @@ public class SqlAlterTableOwner extends SqlAlterTable {
             throw SqlUtil.newContextException( owner.getParserPosition(), RESOURCE.userNotFound( owner.getSimple() ) );
         }
     }
+
 }
 
