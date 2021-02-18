@@ -36,6 +36,8 @@ package org.polypheny.db.sql.ddl;
 
 import java.util.List;
 import lombok.Getter;
+import org.polypheny.db.catalog.Catalog.ConstraintType;
+import org.polypheny.db.catalog.entity.CatalogConstraint;
 import org.polypheny.db.sql.SqlCall;
 import org.polypheny.db.sql.SqlIdentifier;
 import org.polypheny.db.sql.SqlKind;
@@ -92,7 +94,17 @@ public class SqlKeyConstraint extends SqlCall {
             public SqlOperator getOperator() {
                 return PRIMARY;
             }
+
         };
+    }
+
+
+    public ConstraintType getConstraintType() {
+        if( getOperator() == PRIMARY ) {
+            return ConstraintType.PRIMARY;
+        }else {
+            return ConstraintType.UNIQUE;
+        }
     }
 
 

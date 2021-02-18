@@ -37,6 +37,7 @@ package org.polypheny.db.sql;
 import java.nio.charset.Charset;
 import java.util.Objects;
 import java.util.TimeZone;
+import org.polypheny.db.catalog.Catalog.Collation;
 import org.polypheny.db.rel.type.RelDataType;
 import org.polypheny.db.rel.type.RelDataTypeFactory;
 import org.polypheny.db.sql.parser.SqlParserPos;
@@ -45,6 +46,7 @@ import org.polypheny.db.sql.validate.SqlMonotonicity;
 import org.polypheny.db.sql.validate.SqlValidator;
 import org.polypheny.db.sql.validate.SqlValidatorScope;
 import org.polypheny.db.type.PolyType;
+import org.polypheny.db.type.PolyTypeFamily;
 import org.polypheny.db.type.PolyTypeUtil;
 import org.polypheny.db.util.Litmus;
 import org.polypheny.db.util.Static;
@@ -182,9 +184,30 @@ public class SqlDataTypeSpec extends SqlNode {
     }
 
 
+    /**
+     * Parses the collection type to a PolyType; can be null
+     *
+     * @return the parsed collection
+     */
+    public PolyType getCollectionsType() {
+        return collectionsTypeName == null ? null : PolyType.get( collectionsTypeName.getSimple() );
+    }
+
+
     public SqlIdentifier getTypeName() {
         return typeName;
     }
+
+
+    /**
+     * Parses the type to a PolyType; can be null
+     *
+     * @return the parsed type
+     */
+    public PolyType getType() {
+        return typeName == null ? null: PolyType.get( typeName.getSimple() );
+    }
+
 
 
     public int getScale() {
@@ -256,10 +279,10 @@ public class SqlDataTypeSpec extends SqlNode {
             PolyType polyType = PolyType.get( name );
 
             //e.g. for CAST call, for stores that don't support ARRAYs. This is a fix for the WebUI filtering (see webui.Crud.filterTable)
-            if( !writer.getDialect().supportsNestedArrays() && polyType == PolyType.ARRAY ) {
+            if ( !writer.getDialect().supportsNestedArrays() && polyType == PolyType.ARRAY ) {
                 polyType = PolyType.VARCHAR;
                 name = polyType.getName();
-                if(precision < 0){
+                if ( precision < 0 ) {
                     name = name + "(8000)";
                 }
             }
@@ -437,4 +460,5 @@ public class SqlDataTypeSpec extends SqlNode {
 
         return type;
     }
+
 }

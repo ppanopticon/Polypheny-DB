@@ -1112,6 +1112,10 @@ public abstract class Catalog {
             }
             throw new UnknownCollationException( str );
         }
+
+        public static Collation getDefaultCollation() {
+            return getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() );
+        }
     }
 
 
@@ -1154,7 +1158,8 @@ public abstract class Catalog {
 
 
     public enum ConstraintType {
-        UNIQUE( 1 );
+        UNIQUE( 1 ),
+        PRIMARY( 2 );
 
         private final int id;
 

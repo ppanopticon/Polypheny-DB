@@ -19,8 +19,9 @@ package org.polypheny.db.ddl;
 
 import java.util.List;
 import java.util.Map;
-import org.apache.calcite.linq4j.Ord;
 import org.polypheny.db.adapter.DataStore;
+import org.polypheny.db.catalog.Catalog.Collation;
+import org.polypheny.db.catalog.Catalog.ConstraintType;
 import org.polypheny.db.catalog.Catalog.ForeignKeyOption;
 import org.polypheny.db.catalog.Catalog.PlacementType;
 import org.polypheny.db.catalog.Catalog.SchemaType;
@@ -377,15 +378,28 @@ public abstract class DdlManager {
 
 
     /**
-     * Adds a new column to a given table  // TODO DL: refactor remove SqlNode usage
+     * Adds a new column to a given table
      *
-     * @param c the column which is added
+     * @param columnName the name of the column which is added
+     * @param dataTypeSpec
+     * @param collation the collation type of the new column
+     * @param defaultValue the default value of the new column
      * @param tableId the id of the target table
      * @param position the position of the new column
      * @param stores the stores on which the column should be addded
      * @param placementType the placement type used
      */
-    public abstract void addColumn( Ord<SqlNode> c, long tableId, int position, List<DataStore> stores, PlacementType placementType ) throws GenericCatalogException, UnknownCollationException, UnknownColumnException;
+    public abstract void addColumn( String columnName, SqlDataTypeSpec dataTypeSpec, Collation collation, String defaultValue, long tableId, int position, List<DataStore> stores, PlacementType placementType ) throws GenericCatalogException, UnknownCollationException, UnknownColumnException;
+
+    /**
+     * Adds a new key constraint onto a given table
+     *
+     * @param constraintName the sqlconstraint
+     * @param constraintType the type of the constraint
+     * @param columnNames the names of all columns of the constraint
+     * @param tableId the id of the target table
+     */
+    public abstract void addKeyConstraint( String constraintName, ConstraintType constraintType, List<String> columnNames, long tableId ) throws UnknownColumnException, GenericCatalogException;
 
     /**
      * Drops a specific schema
@@ -412,5 +426,36 @@ public abstract class DdlManager {
      * @param statement the used statement
      */
     public abstract void truncate( CatalogTable catalogTable, Statement statement );
+
+    /**
+     * Creates a new type
+     */
+    public abstract void createType();
+
+    /**
+     * Drops a type
+     */
+    public abstract void dropType();
+
+    /**
+     * Creates a new view
+     */
+    public abstract void createView();
+
+
+    /**
+     * Drops a specific view
+     */
+    public abstract void dropView();
+
+    /**
+     * Drops a function
+     */
+    public abstract void dropFunction();
+
+    /**
+     * Sets a specific option
+     */
+    public abstract void setOption();
 
 }

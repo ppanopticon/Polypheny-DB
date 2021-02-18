@@ -25,6 +25,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.commons.lang3.StringUtils;
 import org.polypheny.db.adapter.Adapter;
@@ -36,6 +37,7 @@ import org.polypheny.db.adapter.DataStore.AvailableIndexMethod;
 import org.polypheny.db.adapter.index.IndexManager;
 import org.polypheny.db.catalog.Catalog;
 import org.polypheny.db.catalog.Catalog.Collation;
+import org.polypheny.db.catalog.Catalog.ConstraintType;
 import org.polypheny.db.catalog.Catalog.ForeignKeyOption;
 import org.polypheny.db.catalog.Catalog.IndexType;
 import org.polypheny.db.catalog.Catalog.PlacementType;
@@ -69,7 +71,6 @@ import org.polypheny.db.catalog.exceptions.UnknownKeyException;
 import org.polypheny.db.catalog.exceptions.UnknownSchemaException;
 import org.polypheny.db.catalog.exceptions.UnknownTableException;
 import org.polypheny.db.catalog.exceptions.UnknownUserException;
-import org.polypheny.db.config.RuntimeConfig;
 import org.polypheny.db.ddl.DdlManager;
 import org.polypheny.db.ddl.exception.AlterSourceException;
 import org.polypheny.db.ddl.exception.DdlOnSourceException;
@@ -97,7 +98,6 @@ import org.polypheny.db.sql.parser.SqlParserPos;
 import org.polypheny.db.transaction.Statement;
 import org.polypheny.db.transaction.TransactionException;
 import org.polypheny.db.type.PolyType;
-import org.polypheny.db.type.PolyTypeFamily;
 
 
 public class DdlManagerImpl extends DdlManager {
@@ -117,23 +117,6 @@ public class DdlManagerImpl extends DdlManager {
     }
 
 
-    private CatalogColumn getCatalogColumn( long tableId, String columnName ) throws UnknownColumnException {
-        return catalog.getColumn( tableId, columnName );
-    }
-
-
-    private Collation getCollation( SqlColumnDeclaration columnDeclaration, PolyType dataType ) throws UnknownCollationException {
-        if ( dataType.getFamily() == PolyTypeFamily.CHARACTER ) {
-            if ( columnDeclaration.collation != null ) {
-                return Collation.parse( columnDeclaration.collation );
-            } else {
-                return getDefaultCollation(); // Set default collation
-            }
-        }
-        return null;
-    }
-
-
     protected DataStore getDataStoreInstance( int storeId ) throws DdlOnSourceException {
         Adapter adapterInstance = AdapterManager.getInstance().getAdapter( storeId );
         if ( adapterInstance == null ) {
@@ -147,11 +130,6 @@ public class DdlManagerImpl extends DdlManager {
         } else {
             throw new RuntimeException( "Unknown kind of adapter: " + adapterInstance.getClass().getName() );
         }
-    }
-
-
-    private Collation getDefaultCollation() {
-        return Collation.getById( RuntimeConfig.DEFAULT_COLLATION.getInteger() );
     }
 
 
@@ -1146,6 +1124,7 @@ public class DdlManagerImpl extends DdlManager {
     }
 
 
+    // TODO DL: refactor remove SqlNode
     @Override
     public void createTable( long schemaId, String tableName, List<SqlNode> columnList, boolean ifNotExists, List<DataStore> stores, PlacementType placementType, Statement statement ) throws TableAlreadyExistsException {
         try {
@@ -1179,7 +1158,21 @@ public class DdlManagerImpl extends DdlManager {
 
             int position = 1;
             for ( Ord<SqlNode> c : Ord.zip( columnList ) ) {
-                addColumn( c, tableId, position, stores, placementType );
+                if ( c.e instanceof SqlColumnDeclaration ) {
+                    final SqlColumnDeclaration columnDeclaration = (SqlColumnDeclaration) c.e;
+
+                    String defaultValue = columnDeclaration.getExpression() == null ? null : columnDeclaration.getExpression().toString();
+
+                    addColumn( columnDeclaration.getName().getSimple(), columnDeclaration.getDataType(), columnDeclaration.getCollation(), defaultValue, tableId, position, stores, placementType );
+
+                } else if ( c.e instanceof SqlKeyConstraint ) {
+                    SqlKeyConstraint constraint = (SqlKeyConstraint) c.e;
+                    String constraintName = constraint.getName() != null ? constraint.getName().getSimple() : null;
+
+                    addKeyConstraint( constraintName, constraint.getConstraintType(), constraint.getColumnList().getList().stream().map( SqlNode::toString ).collect( Collectors.toList() ), tableId );
+                } else {
+                    throw new AssertionError( c.e.getClass() );
+                }
                 position++;
             }
 
@@ -1193,69 +1186,59 @@ public class DdlManagerImpl extends DdlManager {
     }
 
 
-    // TODO DL: refactor remove SqlNode
     @Override
-    public void addColumn( Ord<SqlNode> c, long tableId, int position, List<DataStore> stores, PlacementType placementType ) throws GenericCatalogException, UnknownCollationException, UnknownColumnException {
-        if ( c.e instanceof SqlColumnDeclaration ) {
-            final SqlColumnDeclaration columnDeclaration = (SqlColumnDeclaration) c.e;
-            final PolyType dataType = PolyType.get( columnDeclaration.getDataType().getTypeName().getSimple() );
-            final PolyType collectionsType = columnDeclaration.getDataType().getCollectionsTypeName() == null ?
-                    null : PolyType.get( columnDeclaration.getDataType().getCollectionsTypeName().getSimple() );
-            Collation collation = getCollation( columnDeclaration, dataType );
-            long addedColumnId = catalog.addColumn(
-                    columnDeclaration.getName().getSimple(),
-                    tableId,
-                    position,
-                    dataType,
-                    collectionsType,
-                    columnDeclaration.getDataType().getPrecision() == -1 ? null : columnDeclaration.getDataType().getPrecision(),
-                    columnDeclaration.getDataType().getScale() == -1 ? null : columnDeclaration.getDataType().getScale(),
-                    columnDeclaration.getDataType().getDimension() == -1 ? null : columnDeclaration.getDataType().getDimension(),
-                    columnDeclaration.getDataType().getCardinality() == -1 ? null : columnDeclaration.getDataType().getCardinality(),
-                    columnDeclaration.getDataType().getNullable(),
-                    collation
-            );
+    public void addColumn( String columnName, SqlDataTypeSpec dataTypeSpec, Collation collation, String defaultValue, long tableId, int position, List<DataStore> stores, PlacementType placementType ) throws GenericCatalogException, UnknownCollationException, UnknownColumnException {
+        long addedColumnId = catalog.addColumn(
+                columnName,
+                tableId,
+                position,
+                dataTypeSpec.getType(),
+                dataTypeSpec.getCollectionsType(),
+                dataTypeSpec.getPrecision() == -1 ? null : dataTypeSpec.getPrecision(),
+                dataTypeSpec.getScale() == -1 ? null : dataTypeSpec.getScale(),
+                dataTypeSpec.getDimension() == -1 ? null : dataTypeSpec.getDimension(),
+                dataTypeSpec.getCardinality() == -1 ? null : dataTypeSpec.getCardinality(),
+                dataTypeSpec.getNullable(),
+                collation
+        );
 
-            for ( DataStore s : stores ) {
-                catalog.addColumnPlacement(
-                        s.getAdapterId(),
-                        addedColumnId,
-                        placementType,
-                        null,
-                        null,
-                        null );
+        for ( DataStore s : stores ) {
+            catalog.addColumnPlacement(
+                    s.getAdapterId(),
+                    addedColumnId,
+                    placementType,
+                    null,
+                    null,
+                    null );
+        }
+
+        // Add default value
+        if ( defaultValue != null ) {
+            // TODO: String is only a temporal solution for default values
+            String v = defaultValue;
+            if ( v.startsWith( "'" ) ) {
+                v = v.substring( 1, v.length() - 1 );
+            }
+            catalog.setDefaultValue( addedColumnId, PolyType.VARCHAR, v );
+        }
+    }
+
+
+    @Override
+    public void addKeyConstraint( String constraintName, ConstraintType constraintType, List<String> columnNames, long tableId ) throws UnknownColumnException, GenericCatalogException {
+        List<Long> columnIds = new LinkedList<>();
+        for ( String columnName : columnNames ) {
+            CatalogColumn catalogColumn = catalog.getColumn( tableId, columnName );
+            columnIds.add( catalogColumn.id );
+        }
+        if ( constraintType == ConstraintType.PRIMARY ) {
+            catalog.addPrimaryKey( tableId, columnIds );
+        } else if ( constraintType == ConstraintType.UNIQUE ) {
+            if ( constraintName == null ) {
+                constraintName = NameGenerator.generateConstraintName();
             }
 
-            // Add default value
-            if ( ((SqlColumnDeclaration) c.e).getExpression() != null ) {
-                // TODO: String is only a temporal solution for default values
-                String v = ((SqlColumnDeclaration) c.e).getExpression().toString();
-                if ( v.startsWith( "'" ) ) {
-                    v = v.substring( 1, v.length() - 1 );
-                }
-                catalog.setDefaultValue( addedColumnId, PolyType.VARCHAR, v );
-            }
-        } else if ( c.e instanceof SqlKeyConstraint ) {
-            SqlKeyConstraint constraint = (SqlKeyConstraint) c.e;
-            List<Long> columnIds = new LinkedList<>();
-            for ( SqlNode node : constraint.getColumnList().getList() ) {
-                String columnName = node.toString();
-                CatalogColumn catalogColumn = catalog.getColumn( tableId, columnName );
-                columnIds.add( catalogColumn.id );
-            }
-            if ( constraint.getOperator() == SqlKeyConstraint.PRIMARY ) {
-                catalog.addPrimaryKey( tableId, columnIds );
-            } else if ( constraint.getOperator() == SqlKeyConstraint.UNIQUE ) {
-                String constraintName;
-                if ( constraint.getName() == null ) {
-                    constraintName = NameGenerator.generateConstraintName();
-                } else {
-                    constraintName = constraint.getName().getSimple();
-                }
-                catalog.addUniqueConstraint( tableId, constraintName, columnIds );
-            }
-        } else {
-            throw new AssertionError( c.e.getClass() );
+            catalog.addUniqueConstraint( tableId, constraintName, columnIds );
         }
     }
 
@@ -1398,6 +1381,42 @@ public class DdlManagerImpl extends DdlManager {
         catalogTable.placementsByAdapter.forEach( ( adapterId, placements ) -> {
             AdapterManager.getInstance().getAdapter( adapterId ).truncate( statement.getPrepareContext(), catalogTable );
         } );
+    }
+
+
+    @Override
+    public void createView() {
+        throw new RuntimeException( "Not supported yet" );
+    }
+
+
+    @Override
+    public void dropView() {
+        throw new RuntimeException( "Not supported yet" );
+    }
+
+
+    @Override
+    public void dropFunction() {
+        throw new RuntimeException( "Not supported yet" );
+    }
+
+
+    @Override
+    public void setOption() {
+        throw new RuntimeException( "Not supported yet" );
+    }
+
+
+    @Override
+    public void createType() {
+        throw new RuntimeException( "Not supported yet" );
+    }
+
+
+    @Override
+    public void dropType() {
+        throw new RuntimeException( "Not supported yet" );
     }
 
 
